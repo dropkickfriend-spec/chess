@@ -9,6 +9,7 @@
 #include "movegen.h"
 #include "move.h"
 #include "perft.h"
+#include "uci.h"
 
 // Kiwipete: the standard second perft test position, exercises castling,
 // en passant, and promotions much earlier than the start position does.
@@ -57,7 +58,12 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    self_test();
-    printf("\nUsage: %s perft <depth> [\"FEN\"]\n", argv[0]);
+    if (argc >= 2 && strcmp(argv[1], "test") == 0) {
+        self_test();
+        return 0;
+    }
+
+    // Default: speak UCI on stdin/stdout (how GUIs and match runners drive us)
+    uci_loop();
     return 0;
 }
