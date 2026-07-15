@@ -221,6 +221,7 @@ int evaluate(const Board *bd) {
 
     if (!initialized) {
         eval_default_strategy_weights(&weights);
+        eval_load_strategy_weights("strategy_weights.txt", &weights);
         initialized = 1;
     }
 

@@ -2,14 +2,16 @@
 """Post-game analyzer: trace which strategies were active, adjust weights based on outcome.
 
 Usage:
-  python3 tools/analyze_game.py game.pgn engine_path weights.txt outcome
+  python3 tools/analyze_game.py game.pgn engine_path weights.txt outcome [game_id]
 
   outcome: 1 (win), 0.5 (draw), 0 (loss)
-  Adjusts weights.txt based on which strategies were active during the game.
+  game_id: optional Supabase game ID for tracking
+  Adjusts weights.txt and uploads to Supabase if configured.
 """
 import sys
 import subprocess
 import json
+import os
 import chess
 import chess.pgn
 
@@ -42,9 +44,10 @@ def detect_phase(board):
         return "middlegame"
     return "endgame"
 
-def trace_strategies(pgn_text, engine_path):
+def trace_strategies(pgn_file, engine_path):
     """Trace active strategies through each move."""
-    game = chess.pgn.read_game(pgn_text)
+    import io
+    game = chess.pgn.read_game(io.StringIO(pgn_file))
     if not game:
         return []
 
@@ -116,12 +119,49 @@ def adjust_weights(weights, strategy_log, outcome):
 
     return weights
 
+def upload_weights_to_supabase(strategy_log, weights, game_id=None):
+    """Upload weights to Supabase for tracking."""
+    try:
+        from match import load_supabase_env, supabase_insert
+    except ImportError:
+        return
+
+    try:
+        conf = load_supabase_env()
+        base_url = conf.get("SUPABASE_URL", "")
+        key = conf.get("SUPABASE_KEY", "")
+
+        if not base_url or not key:
+            return
+
+        rows = []
+        for idx, strat in enumerate(STRATEGIES):
+            w = weights.get(strat, 1.0)
+            rows.append({
+                "game_id": game_id,
+                "strategy_idx": idx,
+                "strategy_name": strat,
+                "weight": w
+            })
+
+        supabase_insert(base_url.rstrip("/"), key, "strategy_weights", rows)
+
+        # Update current weights
+        for idx, strat in enumerate(STRATEGIES):
+            w = weights.get(strat, 1.0)
+            supabase_insert(base_url.rstrip("/"), key, "strategy_weights_current",
+                          [{"strategy_idx": idx, "strategy_name": strat, "weight": w}],
+                          return_repr=False)
+    except Exception as e:
+        print(f"Supabase upload failed: {e}", file=sys.stderr)
+
 def main():
     if len(sys.argv) < 5:
         print(__doc__)
         return
 
     pgn_path, engine_path, weights_path, outcome_str = sys.argv[1:5]
+    game_id = int(sys.argv[5]) if len(sys.argv) > 5 else None
     outcome = float(outcome_str)
 
     # Read game
@@ -140,8 +180,11 @@ def main():
     # Adjust based on outcome
     weights = adjust_weights(weights, strategy_log, outcome)
 
-    # Save updated weights
+    # Save updated weights locally
     save_weights(weights_path, weights)
+
+    # Upload to Supabase for tracking
+    upload_weights_to_supabase(strategy_log, weights, game_id)
 
     print(f"Updated weights: {len(strategy_log)} moves, outcome {outcome:.1f}")
     print("New weights:")
