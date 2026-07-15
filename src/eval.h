@@ -4,6 +4,8 @@
 
 #include "board.h"
 
+void eval_init(void);   // build pawn-structure / king-shield masks
+
 // Score in centipawns from the side-to-move's perspective (negamax convention).
 int evaluate(const Board *bd);
 

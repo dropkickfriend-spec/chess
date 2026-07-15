@@ -8,6 +8,7 @@
 #include "movegen.h"
 #include "move.h"
 #include "eval.h"
+#include "attacks.h"
 
 // ---- Position hash (repetition detection only) ----
 // splitmix64 finalizer over each bitboard; collision odds are irrelevant
@@ -163,6 +164,19 @@ static int quiescence(Board *bd, int alpha, int beta) {
         int move = ml.moves[i];
         if (!M_CAP(move) && !M_PROMO(move)) continue;
 
+        if (M_CAP(move) && !M_PROMO(move)) {
+            int victim = M_EP(move) ? 0 : victim_on(bd, M_TO(move), !bd->side);
+            // Delta pruning: even winning this piece can't lift us to alpha
+            if (stand + piece_val[victim] + 200 <= alpha) continue;
+            // Pseudo-SEE: don't grab a cheap piece with an expensive one
+            // when a pawn guards the square
+            int att = M_PIECE(move) % 6;
+            if (piece_val[att] - piece_val[victim] > 150
+                && (pawn_attacks[bd->side][M_TO(move)]
+                    & bd->bb[bd->side == WHITE ? BP : WP]))
+                continue;
+        }
+
         Undo undo;
         make_move(bd, move, &undo);
         int score = -quiescence(bd, -beta, -alpha);
@@ -296,10 +310,16 @@ int search_best_move(Board *bd, int movetime_ms, int max_depth) {
 
     if (max_depth <= 0 || max_depth >= MAX_PLY) max_depth = MAX_PLY - 1;
 
-    int best = 0;
+    int best = 0, prev_score = 0;
     for (int depth = 1; depth <= max_depth; depth++) {
-        int score = negamax(bd, depth, -INF_SCORE, INF_SCORE, 0, 1);
+        // Aspiration window around the last score; widen on a miss
+        int alpha = depth >= 4 ? prev_score - 40 : -INF_SCORE;
+        int beta  = depth >= 4 ? prev_score + 40 :  INF_SCORE;
+        int score = negamax(bd, depth, alpha, beta, 0, 1);
+        if (!stop_search && (score <= alpha || score >= beta))
+            score = negamax(bd, depth, -INF_SCORE, INF_SCORE, 0, 1);
         if (stop_search) break;  // partial iteration: keep previous best
+        prev_score = score;
         best = pv_tab[0][0];
 
         long long ms = now_ms() - start;

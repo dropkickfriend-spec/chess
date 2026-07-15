@@ -9,6 +9,7 @@
 #include "movegen.h"
 #include "move.h"
 #include "perft.h"
+#include "eval.h"
 #include "uci.h"
 
 // Kiwipete: the standard second perft test position, exercises castling,
@@ -42,6 +43,7 @@ static void self_test(void) {
 int main(int argc, char **argv) {
     init_stepper_attacks();
     init_slider_attacks();
+    eval_init();
 
     if (argc >= 2 && strcmp(argv[1], "perft") == 0) {
         int depth = argc >= 3 ? atoi(argv[2]) : 5;
