@@ -2,6 +2,7 @@
 // Every term is scored twice — middlegame and endgame — and blended by game
 // phase (how much non-pawn material is left), so the king slides smoothly
 // from cowering in the corner to leading the charge.
+#include <stdlib.h>
 #include "eval.h"
 #include "attacks.h"
 #include "magic.h"
@@ -104,6 +105,12 @@ static const int king_eg[64] = {
 static const int passed_mg[8] = { 0,  5, 10, 20, 35,  60, 100, 0 };
 static const int passed_eg[8] = { 0, 10, 20, 35, 60, 100, 150, 0 };
 
+// A passer the defender provably can't catch is nearly a queen
+#define UNSTOPPABLE_EG 600
+
+#define CHEB(a, b) ((abs((a)/8 - (b)/8) > abs((a)%8 - (b)%8)) \
+                    ? abs((a)/8 - (b)/8) : abs((a)%8 - (b)%8))
+
 #define ISOLATED_MG  -10
 #define ISOLATED_EG  -15
 #define DOUBLED_MG   -10
@@ -197,6 +204,30 @@ int evaluate(const Board *bd) {
                     if (!(passed_mask[side][sq] & their_pawns)) {
                         m += passed_mg[rel_rank];
                         e += passed_eg[rel_rank];
+
+                        int enemy_base = side == WHITE ? BP : WP;
+                        U64 enemy_pieces = bd->bb[enemy_base + 1] | bd->bb[enemy_base + 2]
+                                         | bd->bb[enemy_base + 3] | bd->bb[enemy_base + 4];
+                        int ek = LSB(bd->bb[enemy_base + 5]);
+                        int ok = LSB(bd->bb[base + 5]);
+                        int promo_sq = side == WHITE ? 56 + f : f;
+
+                        // Rule of the square: with only a king to defend, the
+                        // pawn promotes iff that king can't reach the
+                        // promotion square in time (side to move = one tempo).
+                        // Exact only when nothing blocks the pawn's path.
+                        if (!enemy_pieces
+                            && !(passed_mask[side][sq] & file_mask[f] & occ)) {
+                            int steps = 7 - rel_rank - (rel_rank == 1);
+                            int kdist = CHEB(ek, promo_sq) - (bd->side != side);
+                            if (kdist > steps)
+                                e += UNSTOPPABLE_EG;
+                        }
+                        // Otherwise judge the race by king proximity to the
+                        // pawn's stop square, scaled by how advanced it is
+                        int front = side == WHITE ? sq + 8 : sq - 8;
+                        e += 2 * rel_rank * CHEB(ek, front);
+                        e -= rel_rank * CHEB(ok, front);
                     }
                     if (!(adj_files[f] & own_pawns)) {
                         m += ISOLATED_MG; e += ISOLATED_EG;
