@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""Post-game analyzer: trace which strategies were active, adjust weights based on outcome.
+
+Usage:
+  python3 tools/analyze_game.py game.pgn engine_path weights.txt outcome
+
+  outcome: 1 (win), 0.5 (draw), 0 (loss)
+  Adjusts weights.txt based on which strategies were active during the game.
+"""
+import sys
+import subprocess
+import json
+import chess
+import chess.pgn
+
+STRATEGIES = [
+    "DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
+    "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE", "DEFENDER_LOGISTICS",
+    "KING_ACTIVITY", "PAWN_PROMOTION", "OPPOSITION",
+    "MATERIAL"
+]
+
+PHASE_THRESHOLDS = {
+    "opening": 20,
+    "middlegame": 10,
+    "endgame": 0
+}
+
+def detect_phase(board):
+    """Detect game phase based on material."""
+    phase_weights = {
+        chess.KNIGHT: 1, chess.BISHOP: 1, chess.ROOK: 2, chess.QUEEN: 4
+    }
+    material = 0
+    for piece_type, weight in phase_weights.items():
+        material += len(board.pieces(piece_type, chess.WHITE)) * weight
+        material += len(board.pieces(piece_type, chess.BLACK)) * weight
+
+    if material >= PHASE_THRESHOLDS["opening"]:
+        return "opening"
+    elif material >= PHASE_THRESHOLDS["middlegame"]:
+        return "middlegame"
+    return "endgame"
+
+def trace_strategies(pgn_text, engine_path):
+    """Trace active strategies through each move."""
+    game = chess.pgn.read_game(pgn_text)
+    if not game:
+        return []
+
+    board = game.board()
+    strategy_log = []
+
+    for move_num, move in enumerate(game.mainline_moves()):
+        board.push(move)
+        phase = detect_phase(board)
+
+        # Determine which strategies are "active" in this position
+        active = ["MATERIAL"]  # Always active
+        if phase == "opening":
+            active.extend(["KING_SAFETY_OPENING"])
+        elif phase == "middlegame":
+            active.extend(["PIECE_ACTIVITY", "PAWN_STRUCTURE"])
+        else:
+            active.extend(["PAWN_PROMOTION"])
+
+        strategy_log.append({
+            "move": move_num,
+            "fen": board.fen(),
+            "phase": phase,
+            "active_strategies": active
+        })
+
+    return strategy_log
+
+def load_weights(path):
+    """Load current strategy weights."""
+    weights = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) >= 3 and parts[0] == "weight":
+                    idx = int(parts[1])
+                    w = float(parts[2])
+                    if idx < len(STRATEGIES):
+                        weights[STRATEGIES[idx]] = w
+    except FileNotFoundError:
+        pass
+
+    # Fill missing with defaults
+    for strat in STRATEGIES:
+        if strat not in weights:
+            weights[strat] = 1.0
+
+    return weights
+
+def save_weights(path, weights):
+    """Save adjusted strategy weights."""
+    with open(path, "w") as f:
+        for idx, strat in enumerate(STRATEGIES):
+            w = weights.get(strat, 1.0)
+            f.write(f"weight {idx} {w}\n")
+
+def adjust_weights(weights, strategy_log, outcome):
+    """Adjust weights based on game outcome."""
+    # If we won: increase weight of active strategies
+    # If we lost: decrease weight of active strategies
+
+    adjustment = 1.02 if outcome > 0.5 else 0.98
+
+    for entry in strategy_log:
+        for strat in entry["active_strategies"]:
+            if strat in weights:
+                weights[strat] *= adjustment
+
+    return weights
+
+def main():
+    if len(sys.argv) < 5:
+        print(__doc__)
+        return
+
+    pgn_path, engine_path, weights_path, outcome_str = sys.argv[1:5]
+    outcome = float(outcome_str)
+
+    # Read game
+    with open(pgn_path) as f:
+        pgn_text = f.read()
+
+    # Trace strategies through game
+    strategy_log = trace_strategies(pgn_text, engine_path)
+    if not strategy_log:
+        print("No strategies traced")
+        return
+
+    # Load current weights
+    weights = load_weights(weights_path)
+
+    # Adjust based on outcome
+    weights = adjust_weights(weights, strategy_log, outcome)
+
+    # Save updated weights
+    save_weights(weights_path, weights)
+
+    print(f"Updated weights: {len(strategy_log)} moves, outcome {outcome:.1f}")
+    print("New weights:")
+    for strat, w in sorted(weights.items()):
+        print(f"  {strat}: {w:.4f}")
+
+if __name__ == "__main__":
+    main()
