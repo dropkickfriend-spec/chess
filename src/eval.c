@@ -154,10 +154,20 @@ void eval_init(void) {
 #define W_IDX(sq) ((7 - (sq) / 8) * 8 + (sq) % 8)
 #define B_IDX(sq) (sq)
 
+// King attack: pieces bearing on the ring around the enemy king accumulate
+// "attack units" (weighted by piece type); the bonus grows quadratically so
+// a coordinated assault scores far more than a lone raider.
+static const int king_atk_weight[6] = { 0, 2, 2, 3, 5, 0 };
+
 int evaluate(const Board *bd) {
     int mg = 0, eg = 0, phase = 0;
+    int atk_units[2] = { 0, 0 };
     U64 occ = bd->occ[BOTH];
     U64 wp = bd->bb[WP], bp = bd->bb[BP];
+
+    U64 king_zone[2];  // ring around each side's OWN king
+    king_zone[WHITE] = bd->bb[WK] ? king_attacks[LSB(bd->bb[WK])] | bd->bb[WK] : 0;
+    king_zone[BLACK] = bd->bb[BK] ? king_attacks[LSB(bd->bb[BK])] | bd->bb[BK] : 0;
 
     for (int side = WHITE; side <= BLACK; side++) {
         int sign = side == WHITE ? 1 : -1;
@@ -165,6 +175,7 @@ int evaluate(const Board *bd) {
         U64 own = bd->occ[side];
         U64 own_pawns = side == WHITE ? wp : bp;
         U64 their_pawns = side == WHITE ? bp : wp;
+        U64 enemy_zone = king_zone[!side];
 
         for (int pt = 0; pt < 6; pt++) {
             U64 b = bd->bb[base + pt];
@@ -197,21 +208,32 @@ int evaluate(const Board *bd) {
                     break;
                 }
                 case 1: {  // knight mobility
-                    int mob = COUNT(knight_attacks[sq] & ~own) - 4;
+                    U64 att = knight_attacks[sq];
+                    int mob = COUNT(att & ~own) - 4;
                     m += mob * 4; e += mob * 4;
+                    atk_units[side] += king_atk_weight[1] * COUNT(att & enemy_zone);
                     break;
                 }
                 case 2: {  // bishop mobility
-                    int mob = COUNT(get_bishop_attacks(sq, occ) & ~own) - 6;
+                    U64 att = get_bishop_attacks(sq, occ);
+                    int mob = COUNT(att & ~own) - 6;
                     m += mob * 3; e += mob * 3;
+                    atk_units[side] += king_atk_weight[2] * COUNT(att & enemy_zone);
                     break;
                 }
                 case 3: {  // rook mobility + file quality
-                    int mob = COUNT(get_rook_attacks(sq, occ) & ~own) - 7;
+                    U64 att = get_rook_attacks(sq, occ);
+                    int mob = COUNT(att & ~own) - 7;
                     m += mob * 2; e += mob * 4;
+                    atk_units[side] += king_atk_weight[3] * COUNT(att & enemy_zone);
                     U64 fm = file_mask[sq % 8];
                     if (!(fm & (wp | bp)))      m += ROOK_OPEN;
                     else if (!(fm & own_pawns)) m += ROOK_SEMIOPEN;
+                    break;
+                }
+                case 4: {  // queen: only the king attack matters here
+                    atk_units[side] += king_atk_weight[4]
+                        * COUNT(get_queen_attacks(sq, occ) & enemy_zone);
                     break;
                 }
                 case 5: {  // king shield (middlegame concern only)
@@ -228,6 +250,13 @@ int evaluate(const Board *bd) {
             mg += sign * BISHOP_PAIR_MG;
             eg += sign * BISHOP_PAIR_EG;
         }
+    }
+
+    // Quadratic king-attack bonus, middlegame only (kings fight in endings)
+    for (int side = WHITE; side <= BLACK; side++) {
+        int u = atk_units[side];
+        if (u > 40) u = 40;
+        mg += (side == WHITE ? 1 : -1) * (u * u / 4);
     }
 
     if (phase > 24) phase = 24;

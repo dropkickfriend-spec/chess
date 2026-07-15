@@ -9,6 +9,7 @@
 #include "move.h"
 #include "eval.h"
 #include "attacks.h"
+#include "magic.h"
 
 // ---- Position hash (repetition detection only) ----
 // splitmix64 finalizer over each bitboard; collision odds are irrelevant
@@ -122,12 +123,69 @@ static int victim_on(const Board *bd, int sq, int side) {
     return 0; // en passant target square is empty; victim is a pawn
 }
 
+// ---- Static exchange evaluation ----
+// Play out the full capture sequence on one square, each side always
+// recapturing with its least valuable attacker, then minimax the gains
+// backwards. Recomputing the attacker set after every removal handles
+// x-rays (rook behind rook, bishop behind pawn) for free.
+static U64 attackers_to(const Board *bd, int sq, U64 occ) {
+    return (pawn_attacks[WHITE][sq] & bd->bb[BP])
+         | (pawn_attacks[BLACK][sq] & bd->bb[WP])
+         | (knight_attacks[sq] & (bd->bb[WN] | bd->bb[BN]))
+         | (king_attacks[sq]   & (bd->bb[WK] | bd->bb[BK]))
+         | (get_bishop_attacks(sq, occ)
+            & (bd->bb[WB] | bd->bb[BB_] | bd->bb[WQ] | bd->bb[BQ]))
+         | (get_rook_attacks(sq, occ)
+            & (bd->bb[WR] | bd->bb[BR] | bd->bb[WQ] | bd->bb[BQ]));
+}
+
+static int see(const Board *bd, int move) {
+    if (M_CASTLE(move)) return 0;
+    int to = M_TO(move);
+
+    int gain[32], d = 0;
+    gain[0] = M_EP(move) ? piece_val[0]
+            : M_CAP(move) ? piece_val[victim_on(bd, to, !bd->side)] : 0;
+
+    int apc = M_PIECE(move) % 6;      // piece currently standing on 'to'
+    U64 occ = bd->occ[BOTH] ^ (1ULL << M_FROM(move));
+    if (M_EP(move))
+        occ ^= 1ULL << (bd->side == WHITE ? to - 8 : to + 8);
+    int stm = !bd->side;              // side to recapture next
+
+    while (d < 30) {
+        U64 att = attackers_to(bd, to, occ) & occ;
+        int base = stm == WHITE ? WP : BP;
+        U64 fb = 0;
+        int pt = -1;
+        for (int p = 0; p < 6; p++) {  // least valuable attacker first
+            U64 b = bd->bb[base + p] & att;
+            if (b) { pt = p; fb = b & -b; break; }
+        }
+        if (pt < 0) break;
+        d++;
+        gain[d] = piece_val[apc] - gain[d - 1];  // capture the piece on 'to'
+        occ ^= fb;
+        apc = pt;
+        stm = !stm;
+    }
+    while (d > 0) {                    // negamax the sequence backwards
+        int stand = -gain[d - 1];
+        gain[d - 1] = -(gain[d] > stand ? gain[d] : stand);
+        d--;
+    }
+    return gain[0];
+}
+
 static int score_move(const Board *bd, int move, int ply, int tt_move) {
     if (move == tt_move) return 1000000;   // hash move first, always
     int s = 0;
     if (M_CAP(move)) {
         int victim = M_EP(move) ? 0 : victim_on(bd, M_TO(move), !bd->side);
-        s = 100000 + piece_val[victim] * 10 - piece_val[M_PIECE(move) % 6];
+        if (see(bd, move) >= 0)  // winning/even captures above killers
+            s = 100000 + piece_val[victim] * 10 - piece_val[M_PIECE(move) % 6];
+        else                     // losing captures below quiet history
+            s = -30000 + piece_val[victim];
     } else if (move == killers[ply][0]) s = 90000;
     else if (move == killers[ply][1])   s = 80000;
     else s = history_tab[M_PIECE(move)][M_TO(move)];  // quiets by history
@@ -168,13 +226,8 @@ static int quiescence(Board *bd, int alpha, int beta) {
             int victim = M_EP(move) ? 0 : victim_on(bd, M_TO(move), !bd->side);
             // Delta pruning: even winning this piece can't lift us to alpha
             if (stand + piece_val[victim] + 200 <= alpha) continue;
-            // Pseudo-SEE: don't grab a cheap piece with an expensive one
-            // when a pawn guards the square
-            int att = M_PIECE(move) % 6;
-            if (piece_val[att] - piece_val[victim] > 150
-                && (pawn_attacks[bd->side][M_TO(move)]
-                    & bd->bb[bd->side == WHITE ? BP : WP]))
-                continue;
+            // Losing exchanges aren't worth resolving in quiescence
+            if (see(bd, move) < 0) continue;
         }
 
         Undo undo;
@@ -241,6 +294,15 @@ static int negamax(Board *bd, int depth, int alpha, int beta, int ply, int can_n
     if (ml.count == 0)
         return in_check ? -MATE_SCORE + ply : 0;
 
+    // Futility: at shallow depth with a hopeless static eval, quiet moves
+    // that don't give check can't recover — skip them (never the first move)
+    int futile = 0;
+    if (depth <= 3 && !in_check && !is_pv
+        && alpha > -MATE_SCORE + 2 * MAX_PLY && alpha < MATE_SCORE - 2 * MAX_PLY) {
+        static const int margin[4] = { 0, 150, 300, 500 };
+        if (evaluate(bd) + margin[depth] <= alpha) futile = 1;
+    }
+
     int scores[256];
     for (int i = 0; i < ml.count; i++) scores[i] = score_move(bd, ml.moves[i], ply, tt_move);
 
@@ -253,6 +315,15 @@ static int negamax(Board *bd, int depth, int alpha, int beta, int ply, int can_n
         Undo undo;
         make_move(bd, move, &undo);
         hist_len++;
+
+        if (futile && i > 0 && !M_CAP(move) && !M_PROMO(move)) {
+            int ok = bd->side == WHITE ? WK : BK;  // side just moved's opponent
+            if (!is_square_attacked(bd, LSB(bd->bb[ok]), !bd->side)) {
+                hist_len--;
+                unmake_move(bd, move, &undo);
+                continue;
+            }
+        }
 
         int score;
         if (i == 0) {
@@ -278,7 +349,12 @@ static int negamax(Board *bd, int depth, int alpha, int beta, int ply, int can_n
             if (!M_CAP(move)) {  // quiet cutoff → killers + history credit
                 killers[ply][1] = killers[ply][0];
                 killers[ply][0] = move;
-                history_tab[M_PIECE(move)][M_TO(move)] += depth * depth;
+                int *h = &history_tab[M_PIECE(move)][M_TO(move)];
+                *h += depth * depth;
+                if (*h > 60000)  // keep quiets below the killer band
+                    for (int p = 0; p < 12; p++)
+                        for (int s = 0; s < 64; s++)
+                            history_tab[p][s] /= 2;
             }
             tt_store(key, depth, beta, TT_BETA, move, ply);
             return beta;
