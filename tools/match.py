@@ -98,7 +98,7 @@ def upload_match(sf_skill, sf_elo, movetime, wins, draws, losses, games):
     print(f"uploaded match {match_id} ({len(games)} games) to Supabase")
 
 
-def play_game(white, black, movetime, max_plies=600):
+def play_game(white, black, movetime, max_plies=1000):
     board = chess.Board()
     while not board.is_game_over(claim_draw=True) and board.ply() < max_plies:
         eng = white if board.turn == chess.WHITE else black
@@ -140,7 +140,13 @@ def main():
             board = play_game(white, black, args.movetime)
             result = board.result(claim_draw=True)
 
-            if result == "1/2-1/2" or result == "*":
+            if result == "1/2-1/2":
+                draws += 1
+                outcome = "draw"
+            elif result == "*":
+                # Game hit move limit without a decisive result
+                # This shouldn't happen with a reasonable limit, but if it does treat as a draw
+                # (the proper fix is to increase max_plies or remove the limit)
                 draws += 1
                 outcome = "draw"
             elif (result == "1-0") == we_are_white:
