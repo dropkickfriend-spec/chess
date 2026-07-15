@@ -363,8 +363,6 @@ int evaluate(const Board *bd) {
 
     if (phase > 24) phase = 24;
     int score = (mg * phase + eg * (24 - phase)) / 24;
-
-    // Add mate certainty as a tunable evaluation component
     return bd->side == WHITE ? score : -score;
 }
 
