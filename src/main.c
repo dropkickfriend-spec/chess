@@ -1,0 +1,63 @@
+// main.c — Part 7: driver + self-test
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include "board.h"
+#include "attacks.h"
+#include "magic.h"
+#include "movegen.h"
+#include "move.h"
+#include "perft.h"
+
+// Kiwipete: the standard second perft test position, exercises castling,
+// en passant, and promotions much earlier than the start position does.
+#define KIWIPETE "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"
+
+static void self_test(void) {
+    struct { const char *fen; int depth; long long expected; } cases[] = {
+        { START_FEN, 1, 20 },
+        { START_FEN, 2, 400 },
+        { START_FEN, 3, 8902 },
+        { START_FEN, 4, 197281 },
+        { KIWIPETE,  1, 48 },
+        { KIWIPETE,  2, 2039 },
+        { KIWIPETE,  3, 97862 },
+    };
+    int n = sizeof(cases) / sizeof(cases[0]);
+    int pass = 0;
+    for (int i = 0; i < n; i++) {
+        Board bd;
+        board_from_fen(&bd, cases[i].fen);
+        long long got = perft(&bd, cases[i].depth);
+        int ok = got == cases[i].expected;
+        pass += ok;
+        printf("[%s] depth %d: got %lld, expected %lld\n",
+               ok ? "PASS" : "FAIL", cases[i].depth, got, cases[i].expected);
+    }
+    printf("%d/%d perft self-tests passed\n", pass, n);
+}
+
+int main(int argc, char **argv) {
+    init_stepper_attacks();
+    init_slider_attacks();
+
+    if (argc >= 2 && strcmp(argv[1], "perft") == 0) {
+        int depth = argc >= 3 ? atoi(argv[2]) : 5;
+        const char *fen = argc >= 4 ? argv[3] : START_FEN;
+
+        Board bd;
+        board_from_fen(&bd, fen);
+        board_print(&bd);
+
+        clock_t start = clock();
+        perft_divide(&bd, depth);
+        double secs = (double)(clock() - start) / CLOCKS_PER_SEC;
+        printf("(%.2fs)\n", secs);
+        return 0;
+    }
+
+    self_test();
+    printf("\nUsage: %s perft <depth> [\"FEN\"]\n", argv[0]);
+    return 0;
+}
