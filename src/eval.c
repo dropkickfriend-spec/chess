@@ -334,6 +334,31 @@ int evaluate(const Board *bd) {
         int u = atk_units[side];
         if (u > 40) u = 40;
         mg += (side == WHITE ? 1 : -1) * (u * u / 4);
+
+        // Penalize king with few/no escape squares, especially on back rank
+        U64 king_bb = bd->bb[side == WHITE ? WK : BK];
+        if (king_bb) {
+            int ksq = LSB(king_bb);
+            U64 escape_sq = king_attacks[ksq] & ~bd->occ[side];
+            int escape_count = COUNT(escape_sq);
+            int king_rank = ksq / 8;
+            int back_rank = (side == WHITE) ? 0 : 7;
+
+            // Heavy penalty if king trapped on back rank with rooks/queens nearby
+            if (escape_count == 0 && king_rank == back_rank) {
+                U64 enemy_rq = bd->bb[side == WHITE ? BR : WR]
+                             | bd->bb[side == WHITE ? BQ : WQ];
+                if (enemy_rq) {
+                    int penalty = 150;  // very strong penalty for back-rank trap
+                    mg -= (side == WHITE ? 1 : -1) * penalty;
+                }
+            }
+            // Milder penalty for king with 1 escape square (still restricted)
+            else if (escape_count == 1) {
+                int penalty = 20;
+                mg -= (side == WHITE ? 1 : -1) * penalty;
+            }
+        }
     }
 
     if (phase > 24) phase = 24;
