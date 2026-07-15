@@ -9,4 +9,17 @@ void eval_init(void);   // build pawn-structure / king-shield masks
 // Score in centipawns from the side-to-move's perspective (negamax convention).
 int evaluate(const Board *bd);
 
+// Texel tuning: registry of every tunable weight block
+typedef struct {
+    const char *name;
+    int *ptr;
+    int count;
+} ParamBlock;
+
+extern const ParamBlock eval_params[];
+extern const int eval_params_n;
+
+// Apply a weights file written by tune mode; returns weights applied.
+int eval_load_weights(const char *path);
+
 #endif

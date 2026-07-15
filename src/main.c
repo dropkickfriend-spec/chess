@@ -10,6 +10,7 @@
 #include "move.h"
 #include "perft.h"
 #include "eval.h"
+#include "tune.h"
 #include "uci.h"
 
 // Kiwipete: the standard second perft test position, exercises castling,
@@ -45,6 +46,11 @@ int main(int argc, char **argv) {
     init_slider_attacks();
     eval_init();
 
+    // Optional Texel-tuned weights (same binary, different personality)
+    const char *wf = getenv("CHESS_WEIGHTS");
+    if (wf && *wf)
+        fprintf(stderr, "loaded %d weights from %s\n", eval_load_weights(wf), wf);
+
     if (argc >= 2 && strcmp(argv[1], "perft") == 0) {
         int depth = argc >= 3 ? atoi(argv[2]) : 5;
         const char *fen = argc >= 4 ? argv[3] : START_FEN;
@@ -62,6 +68,11 @@ int main(int argc, char **argv) {
 
     if (argc >= 2 && strcmp(argv[1], "test") == 0) {
         self_test();
+        return 0;
+    }
+
+    if (argc >= 3 && strcmp(argv[1], "tune") == 0) {
+        tune_run(argv[2]);
         return 0;
     }
 

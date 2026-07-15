@@ -7,14 +7,14 @@
 #include "attacks.h"
 #include "magic.h"
 
-static const int material_mg[6] = { 100, 320, 330, 500, 900, 0 };
-static const int material_eg[6] = { 120, 300, 330, 520, 920, 0 };
+int material_mg[6] = { 100, 320, 330, 500, 900, 0 };
+int material_eg[6] = { 120, 300, 330, 520, 920, 0 };
 
 // Phase weights: N/B=1, R=2, Q=4; 24 = full board
 static const int phase_w[6] = { 0, 1, 1, 2, 4, 0 };
 
 // Tables read like a board diagram: rank 8 first.
-static const int pst_mg[6][64] = {
+int pst_mg[6][64] = {
     { // pawn
          0,  0,  0,  0,  0,  0,  0,  0,
         50, 50, 50, 50, 50, 50, 50, 50,
@@ -79,7 +79,7 @@ static const int pst_mg[6][64] = {
 
 // Endgame overrides: pawns race to promote, king centralises.
 // Knights/bishops/rooks/queens reuse their middlegame shapes.
-static const int pawn_eg[64] = {
+int pawn_eg[64] = {
      0,  0,  0,  0,  0,  0,  0,  0,
     80, 80, 80, 80, 80, 80, 80, 80,
     50, 50, 50, 50, 50, 50, 50, 50,
@@ -90,7 +90,7 @@ static const int pawn_eg[64] = {
      0,  0,  0,  0,  0,  0,  0,  0
 };
 
-static const int king_eg[64] = {
+int king_eg[64] = {
    -50,-40,-30,-20,-20,-30,-40,-50,
    -30,-20,-10,  0,  0,-10,-20,-30,
    -30,-10, 20, 30, 30, 20,-10,-30,
@@ -102,8 +102,8 @@ static const int king_eg[64] = {
 };
 
 // Passed pawn bonus by relative rank (rank 1 = home, 7 = about to queen)
-static const int passed_mg[8] = { 0,  5, 10, 20, 35,  60, 100, 0 };
-static const int passed_eg[8] = { 0, 10, 20, 35, 60, 100, 150, 0 };
+int passed_mg[8] = { 0,  5, 10, 20, 35,  60, 100, 0 };
+int passed_eg[8] = { 0, 10, 20, 35, 60, 100, 150, 0 };
 
 // A passer the defender provably can't catch is nearly a queen
 #define UNSTOPPABLE_EG 600
@@ -111,15 +111,61 @@ static const int passed_eg[8] = { 0, 10, 20, 35, 60, 100, 150, 0 };
 #define CHEB(a, b) ((abs((a)/8 - (b)/8) > abs((a)%8 - (b)%8)) \
                     ? abs((a)/8 - (b)/8) : abs((a)%8 - (b)%8))
 
-#define ISOLATED_MG  -10
-#define ISOLATED_EG  -15
-#define DOUBLED_MG   -10
-#define DOUBLED_EG   -20
-#define BISHOP_PAIR_MG 30
-#define BISHOP_PAIR_EG 50
-#define ROOK_OPEN      15
-#define ROOK_SEMIOPEN   8
-#define SHIELD_BONUS    8
+// Scalar terms are plain ints (uppercase kept from their #define past) so
+// the Texel tuner can adjust them through the registry below.
+int ISOLATED_MG  = -10;
+int ISOLATED_EG  = -15;
+int DOUBLED_MG   = -10;
+int DOUBLED_EG   = -20;
+int BISHOP_PAIR_MG = 30;
+int BISHOP_PAIR_EG = 50;
+int ROOK_OPEN      = 15;
+int ROOK_SEMIOPEN  =  8;
+int SHIELD_BONUS   =  8;
+
+// ---- Tuning registry: every weight the Texel tuner may touch ----
+// material_mg[0] (the pawn) is the scale anchor and is excluded.
+const ParamBlock eval_params[] = {
+    { "material_mg+1", material_mg + 1, 5 },   // N B R Q (K stays 0)
+    { "material_eg",   material_eg,     5 },
+    { "pst_mg[0]", pst_mg[0], 64 }, { "pst_mg[1]", pst_mg[1], 64 },
+    { "pst_mg[2]", pst_mg[2], 64 }, { "pst_mg[3]", pst_mg[3], 64 },
+    { "pst_mg[4]", pst_mg[4], 64 }, { "pst_mg[5]", pst_mg[5], 64 },
+    { "pawn_eg",   pawn_eg,   64 },
+    { "king_eg",   king_eg,   64 },
+    { "passed_mg+1", passed_mg + 1, 6 },       // ranks 2-7
+    { "passed_eg+1", passed_eg + 1, 6 },
+    { "ISOLATED_MG", &ISOLATED_MG, 1 }, { "ISOLATED_EG", &ISOLATED_EG, 1 },
+    { "DOUBLED_MG",  &DOUBLED_MG,  1 }, { "DOUBLED_EG",  &DOUBLED_EG,  1 },
+    { "BISHOP_PAIR_MG", &BISHOP_PAIR_MG, 1 },
+    { "BISHOP_PAIR_EG", &BISHOP_PAIR_EG, 1 },
+    { "ROOK_OPEN", &ROOK_OPEN, 1 }, { "ROOK_SEMIOPEN", &ROOK_SEMIOPEN, 1 },
+    { "SHIELD_BONUS", &SHIELD_BONUS, 1 },
+};
+const int eval_params_n = sizeof(eval_params) / sizeof(eval_params[0]);
+
+// Load "name index value" weight lines (as written by tune mode). Unknown
+// names are ignored so weight files stay usable across small refactors.
+#include <stdio.h>
+#include <string.h>
+int eval_load_weights(const char *path) {
+    FILE *f = fopen(path, "r");
+    if (!f) return 0;
+    char name[64];
+    int idx, val, applied = 0;
+    while (fscanf(f, "%63s %d %d", name, &idx, &val) == 3) {
+        for (int b = 0; b < eval_params_n; b++) {
+            const ParamBlock *pb = &eval_params[b];
+            if (strcmp(pb->name, name) == 0 && idx >= 0 && idx < pb->count) {
+                pb->ptr[idx] = val;
+                applied++;
+                break;
+            }
+        }
+    }
+    fclose(f);
+    return applied;
+}
 
 // ---- Precomputed masks ----
 static U64 file_mask[8];
