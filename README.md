@@ -34,6 +34,12 @@ Results at 100 ms/move vs Stockfish 16:
 v3 took a draw off full-strength Stockfish as Black — Stockfish forced the
 perpetual itself at move 32 (`matches/v3_full.pgn`, round 2).
 
+Later versions: v4 (`db70a94`, SEE + futility + king attack) and v5
+(`aabaab0`, rule-of-the-square + king-passer proximity) measured equal to
+each other in 100-game self-play (48% ± 8) and equal to v3 within the noise
+of 10-game Stockfish rungs. Lesson encoded in the workflow: 10-game matches
+can't resolve <100 Elo — gate changes on 100+ game self-play instead.
+
 Full PGNs in `matches/` (per-version prefixes).
 
 ## Supabase match history
