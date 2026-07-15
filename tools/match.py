@@ -138,6 +138,13 @@ def main():
             we_are_white = g % 2 == 0
             white, black = (ours, sf) if we_are_white else (sf, ours)
             board = play_game(white, black, args.movetime)
+
+            # Incomplete games (engine crash, timeout) shouldn't be recorded
+            if not board.is_game_over():
+                print(f"game {g+1}: INCOMPLETE (max plies reached at move {board.fullmove_number}), skipped")
+                sys.stdout.flush()
+                continue
+
             result = board.result(claim_draw=True)
 
             if result == "1/2-1/2" or result == "*":
