@@ -20,16 +20,17 @@ python3 tools/match.py --games 10 --movetime 0.1 --skill 0
 python3 tools/match.py --games 2  --movetime 0.1          # full strength
 ```
 
-Results at 100 ms/move vs Stockfish 16 (engine commit `4d367d9`):
+Results at 100 ms/move vs Stockfish 16:
 
-| Opponent            | W  | D | L | Score |
-|---------------------|----|---|---|-------|
-| Stockfish skill 0   | 9  | 1 | 0 | 95%   |
-| Stockfish skill 3   | 4  | 4 | 2 | 60%   |
-| Stockfish skill 5   | 2  | 3 | 5 | 35%   |
-| Stockfish full      | 0  | 0 | 2 | 0%    |
+| Opponent            | v1 `4d367d9` | v2 `b214d01` (TT + null-move + LMR) |
+|---------------------|--------------|--------------------------------------|
+| Stockfish skill 0   | 95%          | —                                    |
+| Stockfish skill 3   | 60%          | **75%** (+7 =1 -2)                   |
+| Stockfish skill 5   | 35%          | **55%** (+3 =5 -2)                   |
+| Stockfish skill 7   | —            | 30% (+1 =4 -5)                       |
+| Stockfish full      | 0%           | 0%                                   |
 
-Full PGNs in `matches/`.
+Full PGNs in `matches/` (v2 games prefixed `v2_`).
 
 ## Supabase match history
 
