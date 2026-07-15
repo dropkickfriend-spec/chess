@@ -1,2 +1,4 @@
 chess
 *.o
+strategy_weights.txt
+tools/__pycache__/
