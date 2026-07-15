@@ -27,6 +27,51 @@ U64 board_hash(const Board *bd) {
     return h;
 }
 
+// ---- Transposition table ----
+// 4M entries * 16 bytes = 64MB. Persistent across moves so later searches
+// reuse earlier work. Scores are stored ply-adjusted so mate distances stay
+// correct when a position is reached at a different depth in the tree.
+#define TT_SIZE (1 << 22)
+enum { TT_EXACT, TT_ALPHA, TT_BETA };   // exact / upper bound / lower bound
+
+typedef struct {
+    U64 key;
+    int move;
+    short score;
+    unsigned char depth;
+    unsigned char flag;
+} TTEntry;
+
+static TTEntry tt[TT_SIZE];
+#define TT_MISS (-INF_SCORE - 1)
+
+static int tt_probe(U64 key, int depth, int alpha, int beta, int ply, int *move) {
+    TTEntry *e = &tt[key & (TT_SIZE - 1)];
+    *move = 0;
+    if (e->key != key) return TT_MISS;
+    *move = e->move;                    // ordering hint even if depth too low
+    if (e->depth < depth) return TT_MISS;
+
+    int score = e->score;
+    if (score > MATE_SCORE - 2 * MAX_PLY) score -= ply;
+    else if (score < -MATE_SCORE + 2 * MAX_PLY) score += ply;
+
+    if (e->flag == TT_EXACT) return score;
+    if (e->flag == TT_ALPHA && score <= alpha) return alpha;
+    if (e->flag == TT_BETA && score >= beta) return beta;
+    return TT_MISS;
+}
+
+static void tt_store(U64 key, int depth, int score, int flag, int move, int ply) {
+    TTEntry *e = &tt[key & (TT_SIZE - 1)];
+    if (score > MATE_SCORE - 2 * MAX_PLY) score += ply;
+    else if (score < -MATE_SCORE + 2 * MAX_PLY) score -= ply;
+    e->key = key; e->move = move;
+    e->score = (short)score;
+    e->depth = (unsigned char)(depth > 0 ? depth : 0);
+    e->flag = (unsigned char)flag;
+}
+
 // ---- Search state ----
 static U64 hist[2048];          // game history + current search path
 static int hist_base;           // entries provided by the game
@@ -36,6 +81,7 @@ static long long nodes;
 static int stop_search;
 static struct timespec deadline;
 static int killers[MAX_PLY][2];
+static int history_tab[12][64];  // quiet-move ordering, bumped on cutoffs
 
 static int pv_len[MAX_PLY];
 static int pv_tab[MAX_PLY][MAX_PLY];
@@ -75,13 +121,15 @@ static int victim_on(const Board *bd, int sq, int side) {
     return 0; // en passant target square is empty; victim is a pawn
 }
 
-static int score_move(const Board *bd, int move, int ply) {
+static int score_move(const Board *bd, int move, int ply, int tt_move) {
+    if (move == tt_move) return 1000000;   // hash move first, always
     int s = 0;
     if (M_CAP(move)) {
         int victim = M_EP(move) ? 0 : victim_on(bd, M_TO(move), !bd->side);
         s = 100000 + piece_val[victim] * 10 - piece_val[M_PIECE(move) % 6];
     } else if (move == killers[ply][0]) s = 90000;
     else if (move == killers[ply][1])   s = 80000;
+    else s = history_tab[M_PIECE(move)][M_TO(move)];  // quiets by history
     if (M_PROMO(move)) s += 100000 + piece_val[M_PROMO(move) % 6];
     return s;
 }
@@ -108,7 +156,7 @@ static int quiescence(Board *bd, int alpha, int beta) {
     MoveList ml;
     generate_legal_moves(bd, &ml);
     int scores[256];
-    for (int i = 0; i < ml.count; i++) scores[i] = score_move(bd, ml.moves[i], MAX_PLY - 1);
+    for (int i = 0; i < ml.count; i++) scores[i] = score_move(bd, ml.moves[i], MAX_PLY - 1, 0);
 
     for (int i = 0; i < ml.count; i++) {
         pick_move(&ml, scores, i);
@@ -127,13 +175,20 @@ static int quiescence(Board *bd, int alpha, int beta) {
     return alpha;
 }
 
-static int negamax(Board *bd, int depth, int alpha, int beta, int ply) {
-    pv_len[ply] = ply;
+// Side to move has any non-pawn piece (null-move zugzwang guard)
+static int has_big_pieces(const Board *bd) {
+    int lo = bd->side == WHITE ? WN : BN;
+    return (bd->bb[lo] | bd->bb[lo+1] | bd->bb[lo+2] | bd->bb[lo+3]) != 0;
+}
 
+static int negamax(Board *bd, int depth, int alpha, int beta, int ply, int can_null) {
+    pv_len[ply] = ply;
+    int is_pv = beta - alpha > 1;
+
+    U64 key = board_hash(bd);
     if (ply > 0) {
-        U64 h = board_hash(bd);
-        hist[hist_len] = h;
-        if (is_repetition(h) || bd->halfmove >= 100) return 0;
+        hist[hist_len] = key;
+        if (is_repetition(key) || bd->halfmove >= 100) return 0;
     }
     if (ply >= MAX_PLY - 1) return evaluate(bd);
 
@@ -146,14 +201,37 @@ static int negamax(Board *bd, int depth, int alpha, int beta, int ply) {
     if ((++nodes & 4095) == 0) check_time();
     if (stop_search) return 0;
 
+    // TT probe (never cut at PV nodes or the root — keeps the PV honest)
+    int tt_move;
+    int tt_score = tt_probe(key, depth, alpha, beta, ply, &tt_move);
+    if (tt_score != TT_MISS && ply > 0 && !is_pv) return tt_score;
+
+    // Null-move pruning: hand the opponent a free move; if the reduced
+    // search still fails high, a real move surely would too. Skipped when
+    // in check, in possible zugzwang (pawn-only), or right after a null.
+    if (can_null && !in_check && !is_pv && depth >= 3 && ply > 0
+        && has_big_pieces(bd)
+        && beta < MATE_SCORE - 2 * MAX_PLY && beta > -MATE_SCORE + 2 * MAX_PLY) {
+        int old_ep = bd->ep;
+        bd->side = !bd->side;
+        bd->ep = NO_SQ;
+        int score = -negamax(bd, depth - 3, -beta, -beta + 1, ply + 1, 0);
+        bd->side = !bd->side;
+        bd->ep = old_ep;
+        if (stop_search) return 0;
+        if (score >= beta) return beta;
+    }
+
     MoveList ml;
     generate_legal_moves(bd, &ml);
     if (ml.count == 0)
         return in_check ? -MATE_SCORE + ply : 0;
 
     int scores[256];
-    for (int i = 0; i < ml.count; i++) scores[i] = score_move(bd, ml.moves[i], ply);
+    for (int i = 0; i < ml.count; i++) scores[i] = score_move(bd, ml.moves[i], ply, tt_move);
 
+    int best_move = 0;
+    int flag = TT_ALPHA;
     for (int i = 0; i < ml.count; i++) {
         pick_move(&ml, scores, i);
         int move = ml.moves[i];
@@ -161,26 +239,47 @@ static int negamax(Board *bd, int depth, int alpha, int beta, int ply) {
         Undo undo;
         make_move(bd, move, &undo);
         hist_len++;
-        int score = -negamax(bd, depth - 1, -beta, -alpha, ply + 1);
+
+        int score;
+        if (i == 0) {
+            score = -negamax(bd, depth - 1, -beta, -alpha, ply + 1, 1);
+        } else {
+            // Late move reductions: quiet moves sorted far down the list
+            // rarely raise alpha — try them shallower with a null window,
+            // and only pay full price if they surprise us.
+            int red = 0;
+            if (depth >= 3 && i >= 4 && !in_check
+                && !M_CAP(move) && !M_PROMO(move))
+                red = 1 + (i >= 12);
+            score = -negamax(bd, depth - 1 - red, -alpha - 1, -alpha, ply + 1, 1);
+            if (score > alpha)  // fail high → verify at full depth/window
+                score = -negamax(bd, depth - 1, -beta, -alpha, ply + 1, 1);
+        }
+
         hist_len--;
         unmake_move(bd, move, &undo);
         if (stop_search) return 0;
 
         if (score >= beta) {
-            if (!M_CAP(move)) {  // quiet cutoff → remember as killer
+            if (!M_CAP(move)) {  // quiet cutoff → killers + history credit
                 killers[ply][1] = killers[ply][0];
                 killers[ply][0] = move;
+                history_tab[M_PIECE(move)][M_TO(move)] += depth * depth;
             }
+            tt_store(key, depth, beta, TT_BETA, move, ply);
             return beta;
         }
         if (score > alpha) {
             alpha = score;
+            best_move = move;
+            flag = TT_EXACT;
             pv_tab[ply][ply] = move;
             for (int j = ply + 1; j < pv_len[ply + 1]; j++)
                 pv_tab[ply][j] = pv_tab[ply + 1][j];
             pv_len[ply] = pv_len[ply + 1];
         }
     }
+    tt_store(key, depth, alpha, flag, best_move ? best_move : tt_move, ply);
     return alpha;
 }
 
@@ -188,6 +287,7 @@ int search_best_move(Board *bd, int movetime_ms, int max_depth) {
     nodes = 0;
     stop_search = 0;
     memset(killers, 0, sizeof(killers));
+    memset(history_tab, 0, sizeof(history_tab));
     hist_len = hist_base;
     hist[hist_len] = board_hash(bd);
 
@@ -198,7 +298,7 @@ int search_best_move(Board *bd, int movetime_ms, int max_depth) {
 
     int best = 0;
     for (int depth = 1; depth <= max_depth; depth++) {
-        int score = negamax(bd, depth, -INF_SCORE, INF_SCORE, 0);
+        int score = negamax(bd, depth, -INF_SCORE, INF_SCORE, 0, 1);
         if (stop_search) break;  // partial iteration: keep previous best
         best = pv_tab[0][0];
 
