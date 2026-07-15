@@ -1,0 +1,20 @@
+[Event "chess-bb vs Stockfish"]
+[Site "?"]
+[Date "2026.07.15"]
+[Round "1"]
+[White "chess-bb"]
+[Black "Stockfish"]
+[Result "0-1"]
+
+1. Nc3 d5 2. Nf3 Nf6 3. d4 e6 4. e3 c5 5. Bb5+ Bd7 6. Bd2 Bxb5 7. Nxb5 a6 8. Nc3 Nc6 9. O-O Bd6 10. Qe2 cxd4 11. exd4 h6 12. Be3 O-O 13. Qd3 Qc7 14. h3 Rac8 15. a3 Na5 16. Nd2 b5 17. Rfe1 Nc4 18. Nxc4 bxc4 19. Qe2 Rb8 20. Rab1 Rb7 21. Qf3 Rfb8 22. Bc1 Qa5 23. Ra1 Ne4 24. Rxe4 dxe4 25. Qxe4 Rxb2 26. Bxb2 Rxb2 27. Nd1 Rxc2 28. Ne3 Re2 29. Qa8+ Bf8 30. Kf1 Qd2 31. Qf3 Qxd4 32. Rc1 Ra2 33. Nxc4 Bc5 34. Ne3 Ra1 35. Qa8+ Bf8 36. Rxa1 Qxa1+ 37. Ke2 Qxa3 38. Qc6 a5 39. Kf3 Qb3 40. h4 Qb4 41. h5 Qb3 42. g4 a4 43. Qc4 Qb7+ 44. Kg3 a3 45. Qc2 Bd6+ 46. f4 Qa7 47. Qc8+ Bf8 48. Nc2 Qg1+ 49. Kf3 Qf1+ 50. Kg3 a2 51. Qc6 Qg1+ 52. Kh3 Qf1+ 53. Kg3 Qd3+ 54. Kf2 Qh3 55. Qc7 Qh4+ 56. Kf3 Qh3+ 57. Kf2 Qxg4 58. Qc4 Qxh5 59. Qxa2 Bc5+ 60. Kg3 Qg6+ 61. Kf3 Qd3+ 62. Kg2 Qe2+ 63. Kg3 Qf2+ 64. Kh3 Qf1+ 65. Kg3 Bf2+ 66. Kf3 Bg1+ 67. Kg3 Qf2+ 68. Kg4 f5+ 69. Kh5 Qf3+ 70. Kg6 Qg4# 0-1
+
+[Event "chess-bb vs Stockfish"]
+[Site "?"]
+[Date "2026.07.15"]
+[Round "2"]
+[White "Stockfish"]
+[Black "chess-bb"]
+[Result "1/2-1/2"]
+
+1. e4 Nc6 2. d4 e6 3. Nf3 Nf6 4. e5 Nd5 5. Bb5 a6 6. Bxc6 dxc6 7. c4 Nb6 8. Qe2 c5 9. dxc5 Bxc5 10. Nc3 O-O 11. Bg5 f6 12. exf6 gxf6 13. Bh6 Rf7 14. O-O e5 15. Ne4 Bd4 16. Nxd4 exd4 17. Rad1 Bf5 18. Rfe1 Bxe4 19. Qxe4 c5 20. Qg4+ Kh8 21. Qe6 Rd7 22. Rd3 Na4 23. Rg3 Nxb2 24. Rg8+ Qxg8 25. Qxf6+ Qg7 26. Bxg7+ Rxg7 27. Re7 Rg8 28. Rxg7 Rxg7 29. Qf8+ Rg8 30. Qxc5 Nxc4 31. Qxd4+ Rg7 32. Qd8+ Rg8 33. Qd4+ Rg7 34. Qd8+ Rg8 1/2-1/2
+

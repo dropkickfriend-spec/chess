@@ -22,15 +22,19 @@ python3 tools/match.py --games 2  --movetime 0.1          # full strength
 
 Results at 100 ms/move vs Stockfish 16:
 
-| Opponent            | v1 `4d367d9` | v2 `b214d01` (TT + null-move + LMR) |
-|---------------------|--------------|--------------------------------------|
-| Stockfish skill 0   | 95%          | —                                    |
-| Stockfish skill 3   | 60%          | **75%** (+7 =1 -2)                   |
-| Stockfish skill 5   | 35%          | **55%** (+3 =5 -2)                   |
-| Stockfish skill 7   | —            | 30% (+1 =4 -5)                       |
-| Stockfish full      | 0%           | 0%                                   |
+| Opponent          | v1 `4d367d9` | v2 `b214d01` (search) | v3 `eb9e7a2` (eval) |
+|-------------------|--------------|------------------------|----------------------|
+| Stockfish skill 0 | 95%          | —                      | —                    |
+| Stockfish skill 3 | 60%          | **75%**                | —                    |
+| Stockfish skill 5 | 35%          | **55%**                | **60%** (+5 =2 -3)   |
+| Stockfish skill 7 | —            | 30%                    | **50%** (+2 =6 -2)   |
+| Stockfish skill 10| —            | —                      | 5% (+0 =1 -9)        |
+| Stockfish full    | 0%           | 0%                     | 25% (=1!)            |
 
-Full PGNs in `matches/` (v2 games prefixed `v2_`).
+v3 took a draw off full-strength Stockfish as Black — Stockfish forced the
+perpetual itself at move 32 (`matches/v3_full.pgn`, round 2).
+
+Full PGNs in `matches/` (per-version prefixes).
 
 ## Supabase match history
 
