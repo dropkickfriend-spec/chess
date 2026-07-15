@@ -4,6 +4,10 @@
 
 #include "board.h"
 
+// Index transformation for flipped endgame evaluation (White: rank-flipped, Black: normal)
+#define W_IDX(sq) ((7 - (sq) / 8) * 8 + (sq) % 8)
+#define B_IDX(sq) (sq)
+
 // Game phases
 typedef enum {
     PHASE_OPENING,
