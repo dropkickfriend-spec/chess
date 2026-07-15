@@ -66,6 +66,7 @@ static int tt_probe(U64 key, int depth, int alpha, int beta, int ply, int *move)
 
 static void tt_store(U64 key, int depth, int score, int flag, int move, int ply) {
     TTEntry *e = &tt[key & (TT_SIZE - 1)];
+    if (e->key == key && e->depth > depth) return;  // keep the deeper result
     if (score > MATE_SCORE - 2 * MAX_PLY) score += ply;
     else if (score < -MATE_SCORE + 2 * MAX_PLY) score -= ply;
     e->key = key; e->move = move;
@@ -83,7 +84,9 @@ static long long nodes;
 static int stop_search;
 static struct timespec deadline;
 static int killers[MAX_PLY][2];
-static int history_tab[12][64];  // quiet-move ordering, bumped on cutoffs
+static int history_tab[12][64];   // quiet-move ordering, bumped on cutoffs
+static int counter_move[12][64];  // quiet refutation of [prev piece][prev to]
+static int move_stack[MAX_PLY];   // move played at each ply (0 after null)
 
 static int pv_len[MAX_PLY];
 static int pv_tab[MAX_PLY][MAX_PLY];
@@ -177,7 +180,7 @@ static int see(const Board *bd, int move) {
     return gain[0];
 }
 
-static int score_move(const Board *bd, int move, int ply, int tt_move) {
+static int score_move(const Board *bd, int move, int ply, int tt_move, int prev) {
     if (move == tt_move) return 1000000;   // hash move first, always
     int s = 0;
     if (M_CAP(move)) {
@@ -188,6 +191,7 @@ static int score_move(const Board *bd, int move, int ply, int tt_move) {
             s = -30000 + piece_val[victim];
     } else if (move == killers[ply][0]) s = 90000;
     else if (move == killers[ply][1])   s = 80000;
+    else if (prev && move == counter_move[M_PIECE(prev)][M_TO(prev)]) s = 75000;
     else s = history_tab[M_PIECE(move)][M_TO(move)];  // quiets by history
     if (M_PROMO(move)) s += 100000 + piece_val[M_PROMO(move) % 6];
     return s;
@@ -204,19 +208,30 @@ static void pick_move(MoveList *ml, int *scores, int i) {
 }
 
 // ---- Quiescence: resolve captures so eval isn't taken mid-exchange ----
-static int quiescence(Board *bd, int alpha, int beta) {
+static int quiescence(Board *bd, int alpha, int beta, int ply) {
     if ((++nodes & 4095) == 0) check_time();
     if (stop_search) return 0;
+    if (ply >= MAX_PLY - 1) return evaluate(bd);
+
+    U64 key = board_hash(bd);
+    int tt_move;
+    int tt_score = tt_probe(key, 0, alpha, beta, ply, &tt_move);
+    if (tt_score != TT_MISS) return tt_score;
 
     int stand = evaluate(bd);
-    if (stand >= beta) return beta;
+    if (stand >= beta) {
+        tt_store(key, 0, beta, TT_BETA, 0, ply);
+        return beta;
+    }
     if (stand > alpha) alpha = stand;
 
     MoveList ml;
     generate_legal_moves(bd, &ml);
     int scores[256];
-    for (int i = 0; i < ml.count; i++) scores[i] = score_move(bd, ml.moves[i], MAX_PLY - 1, 0);
+    for (int i = 0; i < ml.count; i++)
+        scores[i] = score_move(bd, ml.moves[i], MAX_PLY - 1, tt_move, 0);
 
+    int flag = TT_ALPHA, best_move = 0;
     for (int i = 0; i < ml.count; i++) {
         pick_move(&ml, scores, i);
         int move = ml.moves[i];
@@ -232,13 +247,17 @@ static int quiescence(Board *bd, int alpha, int beta) {
 
         Undo undo;
         make_move(bd, move, &undo);
-        int score = -quiescence(bd, -beta, -alpha);
+        int score = -quiescence(bd, -beta, -alpha, ply + 1);
         unmake_move(bd, move, &undo);
         if (stop_search) return 0;
 
-        if (score >= beta) return beta;
-        if (score > alpha) alpha = score;
+        if (score >= beta) {
+            tt_store(key, 0, beta, TT_BETA, move, ply);
+            return beta;
+        }
+        if (score > alpha) { alpha = score; flag = TT_EXACT; best_move = move; }
     }
+    tt_store(key, 0, alpha, flag, best_move, ply);
     return alpha;
 }
 
@@ -263,7 +282,7 @@ static int negamax(Board *bd, int depth, int alpha, int beta, int ply, int can_n
     int in_check = is_square_attacked(bd, LSB(bd->bb[K]), !bd->side);
     if (in_check) depth++;  // check extension
 
-    if (depth <= 0) return quiescence(bd, alpha, beta);
+    if (depth <= 0) return quiescence(bd, alpha, beta, ply);
 
     if ((++nodes & 4095) == 0) check_time();
     if (stop_search) return 0;
@@ -282,6 +301,7 @@ static int negamax(Board *bd, int depth, int alpha, int beta, int ply, int can_n
         int old_ep = bd->ep;
         bd->side = !bd->side;
         bd->ep = NO_SQ;
+        move_stack[ply] = 0;
         int score = -negamax(bd, depth - 3, -beta, -beta + 1, ply + 1, 0);
         bd->side = !bd->side;
         bd->ep = old_ep;
@@ -303,8 +323,10 @@ static int negamax(Board *bd, int depth, int alpha, int beta, int ply, int can_n
         if (evaluate(bd) + margin[depth] <= alpha) futile = 1;
     }
 
+    int prev = ply > 0 ? move_stack[ply - 1] : 0;
     int scores[256];
-    for (int i = 0; i < ml.count; i++) scores[i] = score_move(bd, ml.moves[i], ply, tt_move);
+    for (int i = 0; i < ml.count; i++)
+        scores[i] = score_move(bd, ml.moves[i], ply, tt_move, prev);
 
     int best_move = 0;
     int flag = TT_ALPHA;
@@ -314,6 +336,7 @@ static int negamax(Board *bd, int depth, int alpha, int beta, int ply, int can_n
 
         Undo undo;
         make_move(bd, move, &undo);
+        move_stack[ply] = move;
         hist_len++;
 
         if (futile && i > 0 && !M_CAP(move) && !M_PROMO(move)) {
@@ -331,11 +354,15 @@ static int negamax(Board *bd, int depth, int alpha, int beta, int ply, int can_n
         } else {
             // Late move reductions: quiet moves sorted far down the list
             // rarely raise alpha — try them shallower with a null window,
-            // and only pay full price if they surprise us.
+            // and only pay full price if they surprise us. Killers and
+            // countermoves keep their full depth.
             int red = 0;
-            if (depth >= 3 && i >= 4 && !in_check
-                && !M_CAP(move) && !M_PROMO(move))
-                red = 1 + (i >= 12);
+            if (depth >= 3 && i >= 3 && !in_check
+                && !M_CAP(move) && !M_PROMO(move)
+                && move != killers[ply][0] && move != killers[ply][1]) {
+                red = 1 + (i >= 8) + (i >= 16);
+                if (red > depth - 2) red = depth - 2;
+            }
             score = -negamax(bd, depth - 1 - red, -alpha - 1, -alpha, ply + 1, 1);
             if (score > alpha)  // fail high → verify at full depth/window
                 score = -negamax(bd, depth - 1, -beta, -alpha, ply + 1, 1);
@@ -346,9 +373,11 @@ static int negamax(Board *bd, int depth, int alpha, int beta, int ply, int can_n
         if (stop_search) return 0;
 
         if (score >= beta) {
-            if (!M_CAP(move)) {  // quiet cutoff → killers + history credit
+            if (!M_CAP(move)) {  // quiet cutoff → killers/counter/history credit
                 killers[ply][1] = killers[ply][0];
                 killers[ply][0] = move;
+                if (prev)
+                    counter_move[M_PIECE(prev)][M_TO(prev)] = move;
                 int *h = &history_tab[M_PIECE(move)][M_TO(move)];
                 *h += depth * depth;
                 if (*h > 60000)  // keep quiets below the killer band
