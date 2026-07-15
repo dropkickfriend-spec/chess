@@ -122,6 +122,7 @@ int BISHOP_PAIR_EG = 50;
 int ROOK_OPEN      = 15;
 int ROOK_SEMIOPEN  =  8;
 int SHIELD_BONUS   =  8;
+int MATE_CERTAINTY_WEIGHT = 5;  // weight for mate certainty bonus (0-100 scale)
 
 // ---- Tuning registry: every weight the Texel tuner may touch ----
 // material_mg[0] (the pawn) is the scale anchor and is excluded.
@@ -141,6 +142,7 @@ const ParamBlock eval_params[] = {
     { "BISHOP_PAIR_EG", &BISHOP_PAIR_EG, 1 },
     { "ROOK_OPEN", &ROOK_OPEN, 1 }, { "ROOK_SEMIOPEN", &ROOK_SEMIOPEN, 1 },
     { "SHIELD_BONUS", &SHIELD_BONUS, 1 },
+    { "MATE_CERTAINTY_WEIGHT", &MATE_CERTAINTY_WEIGHT, 1 },
 };
 const int eval_params_n = sizeof(eval_params) / sizeof(eval_params[0]);
 
@@ -363,6 +365,21 @@ int evaluate(const Board *bd) {
 
     if (phase > 24) phase = 24;
     int score = (mg * phase + eg * (24 - phase)) / 24;
+
+    // Add mate certainty as a tunable evaluation component
+    // Only compute if one side has attacking material (queen or 2+ rooks)
+    int our_queens = COUNT(bd->bb[bd->side == WHITE ? WQ : BQ]);
+    int our_rooks = COUNT(bd->bb[bd->side == WHITE ? WR : BR]);
+    int their_queens = COUNT(bd->bb[bd->side == WHITE ? BQ : WQ]);
+    int their_rooks = COUNT(bd->bb[bd->side == WHITE ? BR : WR]);
+
+    if (our_queens || our_rooks >= 2 || their_queens || their_rooks >= 2) {
+        MateContext mc = eval_compute_mate_context(bd);
+        // Mate certainty is 0-100; scale by weight and add as midgame bonus
+        int certainty_bonus = (int)(mc.base_certainty * MATE_CERTAINTY_WEIGHT / 10.0f);
+        score += (bd->side == WHITE ? 1 : -1) * certainty_bonus;
+    }
+
     return bd->side == WHITE ? score : -score;
 }
 
