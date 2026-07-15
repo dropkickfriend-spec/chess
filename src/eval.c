@@ -365,3 +365,269 @@ int evaluate(const Board *bd) {
     int score = (mg * phase + eg * (24 - phase)) / 24;
     return bd->side == WHITE ? score : -score;
 }
+
+// ---- Mate Certainty System: Dynamic evaluation based on mating patterns ----
+
+// Analyze opponent defenders for a threatened square: can they defend?
+// Returns logistics analysis showing how many defenders are truly reachable.
+static DefenderAnalysis analyze_defenders(const Board *bd, int threatened_sq, int defender_side) {
+    DefenderAnalysis da = {0, 0, 0, 0, 0};
+    U64 own_occ = bd->occ[defender_side];
+    U64 enemy_occ = bd->occ[!defender_side];
+    U64 all_occ = own_occ | enemy_occ;
+
+    // Pieces that could theoretically defend: rooks, queens, knights, bishops, pawns
+    U64 potential_defenders = 0;
+    int base = defender_side == WHITE ? WR : BR;
+    potential_defenders |= bd->bb[base];     // rooks
+    potential_defenders |= bd->bb[base + 1]; // queens
+    potential_defenders |= bd->bb[base - 2]; // knights
+    potential_defenders |= bd->bb[base - 3]; // bishops
+
+    da.total_potential = COUNT(potential_defenders);
+
+    while (potential_defenders) {
+        int sq = LSB(potential_defenders);
+        POP_BIT(potential_defenders, sq);
+
+        int piece = 0;
+        for (int i = 1; i < 5; i++) {
+            int p = base + (defender_side == WHITE ? i : i - 5);
+            if (p < 0 || p >= 12) continue;
+            if (bd->bb[p] & (1ULL << sq)) {
+                piece = p;
+                break;
+            }
+        }
+        if (!piece) continue;
+
+        U64 piece_attacks = 0;
+        int piece_type = piece % 6;
+
+        if (piece_type == 3)      // rook
+            piece_attacks = get_rook_attacks(sq, all_occ);
+        else if (piece_type == 4) // queen
+            piece_attacks = get_queen_attacks(sq, all_occ);
+        else if (piece_type == 1) // knight
+            piece_attacks = knight_attacks[sq];
+        else if (piece_type == 2) // bishop
+            piece_attacks = get_bishop_attacks(sq, all_occ);
+
+        if (piece_attacks & (1ULL << threatened_sq)) {
+            // Can potentially defend
+            da.actually_reachable++;
+
+            // Check if path is blocked by own pieces
+            if (piece_type == 3 || piece_type == 4) {
+                U64 path = (piece_type == 3) ?
+                    get_rook_attacks(sq, all_occ & ~(1ULL << sq)) :
+                    get_queen_attacks(sq, all_occ & ~(1ULL << sq));
+                if (!(path & (1ULL << threatened_sq))) {
+                    da.blocked_by_own++;
+                }
+            }
+
+            // Check if our pieces control their path
+            U64 our_controlled = 0;
+            for (int our_sq = 0; our_sq < 64; our_sq++) {
+                int our_piece = 0;
+                for (int p = 0; p < 12; p++) {
+                    if (!(bd->bb[p] & (1ULL << our_sq))) continue;
+                    if (p / 6 == !defender_side) {
+                        our_piece = p;
+                        break;
+                    }
+                }
+                if (!our_piece) continue;
+
+                U64 our_attacks = 0;
+                int our_type = our_piece % 6;
+                if (our_type == 0) continue; // skip pawns for now
+                else if (our_type == 1)
+                    our_attacks = knight_attacks[our_sq];
+                else if (our_type == 2)
+                    our_attacks = get_bishop_attacks(our_sq, all_occ);
+                else if (our_type == 3)
+                    our_attacks = get_rook_attacks(our_sq, all_occ);
+                else if (our_type == 4)
+                    our_attacks = get_queen_attacks(our_sq, all_occ);
+                else if (our_type == 5)
+                    our_attacks = king_attacks[our_sq];
+
+                our_controlled |= our_attacks;
+            }
+
+            if (piece_type == 3 || piece_type == 4) {
+                U64 path_squares = get_rook_attacks(sq, 0) & get_rook_attacks(threatened_sq, 0);
+                if (path_squares & our_controlled) {
+                    da.blocked_by_our_control++;
+                }
+            }
+        }
+    }
+
+    return da;
+}
+
+// Compute mate certainty from position features (0-100%)
+// Returns context with base certainty and phase classification.
+MateContext eval_compute_mate_context(const Board *bd) {
+    MateContext mc = {0, 0, 0, 0};
+    int us = bd->side;
+    int them = !us;
+
+    // Phase: determine where we are in the mating attack
+    // 0: normal (material equal/ahead, no immediate threats)
+    // 1: attacking (material roughly equal, we have initiative)
+    // 2: mating (we have significant material + initiative)
+    // 3: forcing (checkmate sequences or forced wins)
+
+    // Evaluate material and position for base_certainty
+    // Feature 1-3: Material count for each side
+    int our_material = 0, their_material = 0;
+    for (int i = 1; i < 5; i++) {
+        our_material += COUNT(bd->bb[us == WHITE ? (WP + i) : (BP + i)]) * material_mg[i];
+        their_material += COUNT(bd->bb[them == WHITE ? (WP + i) : (BP + i)]) * material_mg[i];
+    }
+
+    // Feature 4: Material imbalance (positive = we're up material)
+    float material_advantage = (our_material - their_material) / 1000.0f;
+
+    // Feature 5-6: King safety (escape squares for each side)
+    int our_king_sq = LSB(bd->bb[us == WHITE ? WK : BK]);
+    int their_king_sq = LSB(bd->bb[them == WHITE ? WK : BK]);
+    int our_escapes = COUNT(king_attacks[our_king_sq] & ~bd->occ[us]);
+    int their_escapes = COUNT(king_attacks[their_king_sq] & ~bd->occ[them]);
+
+    // Feature 7: Enemy king exposure
+    float enemy_exposure = (4 - their_escapes) / 4.0f;
+
+    // Feature 8: Our king safety
+    float our_safety = our_escapes / 4.0f;
+
+    // Feature 9-10: Piece activity/mobility (knight + bishop mobility)
+    U64 occ = bd->occ[BOTH];
+    int our_mobility = 0, their_mobility = 0;
+
+    for (int side = 0; side < 2; side++) {
+        int base = side == WHITE ? WP : BP;
+        for (int pt = 1; pt <= 2; pt++) {
+            U64 pieces = bd->bb[base + pt];
+            while (pieces) {
+                int sq = LSB(pieces);
+                POP_BIT(pieces, sq);
+                U64 att = (pt == 1) ? knight_attacks[sq] :
+                         get_bishop_attacks(sq, occ);
+                int mob = COUNT(att & ~bd->occ[side]);
+                if (side == us) our_mobility += mob;
+                else their_mobility += mob;
+            }
+        }
+    }
+
+    // Feature 11-12: Rook/queen activity
+    int our_rook_activity = 0, their_rook_activity = 0;
+    for (int side = 0; side < 2; side++) {
+        int base = side == WHITE ? WP : BP;
+        U64 rooks = bd->bb[base + 3];
+        U64 queens = bd->bb[base + 4];
+        while (rooks) {
+            int sq = LSB(rooks);
+            POP_BIT(rooks, sq);
+            int mob = COUNT(get_rook_attacks(sq, occ) & ~bd->occ[side]);
+            if (side == us) our_rook_activity += mob;
+            else their_rook_activity += mob;
+        }
+        while (queens) {
+            int sq = LSB(queens);
+            POP_BIT(queens, sq);
+            int mob = COUNT(get_queen_attacks(sq, occ) & ~bd->occ[side]);
+            if (side == us) our_rook_activity += mob * 2;
+            else their_rook_activity += mob * 2;
+        }
+    }
+
+    // Feature 13: Attacking pieces near enemy king
+    int attacking_pieces = 0;
+    U64 enemy_zone = king_attacks[their_king_sq] | (1ULL << their_king_sq);
+    for (int pt = 1; pt < 5; pt++) {
+        U64 pieces = bd->bb[us == WHITE ? (WP + pt) : (BP + pt)];
+        while (pieces) {
+            int sq = LSB(pieces);
+            POP_BIT(pieces, sq);
+            U64 att = 0;
+            if (pt == 1) att = knight_attacks[sq];
+            else if (pt == 2) att = get_bishop_attacks(sq, occ);
+            else if (pt == 3) att = get_rook_attacks(sq, occ);
+            else if (pt == 4) att = get_queen_attacks(sq, occ);
+            if (att & enemy_zone) attacking_pieces++;
+        }
+    }
+
+    // Feature 14: Defender analysis (piece routing logistics)
+    DefenderAnalysis da = analyze_defenders(bd, their_king_sq, them);
+    float defender_availability = da.total_potential > 0 ?
+        (1.0f - (float)da.actually_reachable / da.total_potential) : 0.5f;
+
+    // Feature 15: Passed pawns
+    int our_passed = 0, their_passed = 0;
+    for (int sq = 0; sq < 64; sq++) {
+        if (bd->bb[WP] & (1ULL << sq)) {
+            if (!(passed_mask[WHITE][sq] & bd->bb[BP]))
+                our_passed++;
+        }
+        if (bd->bb[BP] & (1ULL << sq)) {
+            if (!(passed_mask[BLACK][sq] & bd->bb[WP]))
+                their_passed++;
+        }
+    }
+
+    // Feature 17-18: Tempo and inititative (measured by attack vs defense balance)
+    float tempo_score = (our_rook_activity - their_rook_activity) / 10.0f;
+    float initiative = (attacking_pieces > their_material / 500) ? 1.0f : 0.0f;
+
+    // Compute base certainty from features
+    mc.base_certainty = 50.0f;  // neutral baseline
+
+    // Add material advantage
+    mc.base_certainty += material_advantage * 20.0f;
+
+    // Heavily weight king safety differential
+    mc.base_certainty += (enemy_exposure - our_safety) * 30.0f;
+
+    // Add mobility advantage
+    mc.base_certainty += ((our_mobility + our_rook_activity) -
+                         (their_mobility + their_rook_activity)) / 10.0f;
+
+    // Add attacking piece coordination
+    mc.base_certainty += attacking_pieces * 5.0f;
+
+    // Penalize if defenders are actually reachable
+    mc.base_certainty -= defender_availability * 20.0f;
+
+    // Add passed pawn advantage
+    mc.base_certainty += (our_passed - their_passed) * 10.0f;
+
+    // Add tempo/initiative
+    mc.base_certainty += tempo_score * 5.0f;
+    mc.base_certainty += initiative * 15.0f;
+
+    // Clamp to 0-100
+    if (mc.base_certainty < 0) mc.base_certainty = 0;
+    if (mc.base_certainty > 100) mc.base_certainty = 100;
+
+    // Determine phase based on certainty level
+    if (mc.base_certainty < 20)
+        mc.phase = 0;  // normal
+    else if (mc.base_certainty < 70)
+        mc.phase = 1;  // attacking
+    else if (mc.base_certainty < 95)
+        mc.phase = 2;  // mating
+    else
+        mc.phase = 3;  // checkmate forcing
+
+    mc.total_certainty = mc.base_certainty + mc.move_reinforcement;
+    if (mc.total_certainty > 100) mc.total_certainty = 100;
+
+    return mc;
+}
