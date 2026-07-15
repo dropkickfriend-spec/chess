@@ -7,8 +7,9 @@ Examples:
     python3 tools/match.py --games 10 --movetime 0.1 --elo 1400
 
 With --upload, results are stored in Supabase (chessbb_matches/chessbb_games).
-Requires SUPABASE_URL and SUPABASE_KEY env vars (service role key, since the
-tables are RLS-protected and only publicly readable).
+Credentials come from SUPABASE_URL/SUPABASE_KEY env vars, falling back to the
+supabase.env file at the repo root (committed anon key: append-only insert on
+the chessbb tables plus public reads — nothing else).
 """
 import argparse
 import datetime
@@ -40,11 +41,29 @@ def supabase_insert(base_url, key, table, rows, return_repr=False):
     return json.loads(body) if return_repr else None
 
 
+def load_supabase_env():
+    """supabase.env at the repo root; real env vars take precedence."""
+    path = os.path.join(os.path.dirname(__file__), "..", "supabase.env")
+    conf = {}
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    conf[k.strip()] = v.strip()
+    except OSError:
+        pass
+    return conf
+
+
 def upload_match(sf_skill, sf_elo, movetime, wins, draws, losses, games):
-    base_url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
+    conf = load_supabase_env()
+    base_url = os.environ.get("SUPABASE_URL") or conf.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY") or conf.get("SUPABASE_KEY")
     if not base_url or not key:
-        print("upload skipped: set SUPABASE_URL and SUPABASE_KEY", file=sys.stderr)
+        print("upload skipped: set SUPABASE_URL and SUPABASE_KEY "
+              "(env or supabase.env)", file=sys.stderr)
         return
     try:
         sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"],

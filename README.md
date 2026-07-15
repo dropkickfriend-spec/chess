@@ -33,14 +33,16 @@ Full PGNs in `matches/`.
 
 ## Supabase match history
 
-Match results are stored in Supabase (`chessbb_matches` + `chessbb_games`,
-public read, service-role write). Upload a new match with:
+Match results are stored in Supabase (`chessbb_matches` + `chessbb_games`).
+Credentials live in `supabase.env` (anon key — it can only append match rows
+and read public data; the service role key is never committed). Upload a new
+match with:
 
 ```sh
-export SUPABASE_URL=https://<project>.supabase.co
-export SUPABASE_KEY=<service role key>
 python3 tools/match.py --games 10 --movetime 0.1 --skill 3 --upload
 ```
+
+`SUPABASE_URL`/`SUPABASE_KEY` env vars override the file if set.
 
 ## Architecture
 
