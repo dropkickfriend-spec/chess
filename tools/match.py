@@ -15,6 +15,7 @@ import argparse
 import datetime
 import json
 import os
+import shutil
 import subprocess
 import sys
 import urllib.request
@@ -22,6 +23,10 @@ import urllib.request
 import chess
 import chess.engine
 import chess.pgn
+
+# Works on desktop Linux (/usr/games) and Termux ($PREFIX/bin) alike
+DEFAULT_STOCKFISH = (shutil.which("stockfish")
+                     or "/usr/games/stockfish")
 
 
 def supabase_insert(base_url, key, table, rows, return_repr=False):
@@ -105,7 +110,7 @@ def play_game(white, black, movetime, max_plies=600):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--engine", default="./chess")
-    ap.add_argument("--stockfish", default="/usr/games/stockfish")
+    ap.add_argument("--stockfish", default=DEFAULT_STOCKFISH)
     ap.add_argument("--games", type=int, default=10)
     ap.add_argument("--movetime", type=float, default=0.1, help="seconds per move")
     ap.add_argument("--skill", type=int, default=None, help="Stockfish Skill Level 0-20")

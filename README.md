@@ -55,6 +55,51 @@ python3 tools/match.py --games 10 --movetime 0.1 --skill 3 --upload
 
 `SUPABASE_URL`/`SUPABASE_KEY` env vars override the file if set.
 
+## Playing on Lichess
+
+`tools/lichess_bot.py` bridges the engine to the Lichess Bot API: it accepts
+standard-chess challenges, plays with the engine's own clock management, and
+logs every finished game to Supabase like the match runner does.
+
+One-time setup (the account is permanently marked as a bot):
+
+1. Create a **new** lichess account (it must have zero games played).
+2. Create a token with the `bot:play` scope:
+   <https://lichess.org/account/oauth/token/create?scopes[]=bot:play>
+3. Upgrade the account:
+   `curl -d '' https://lichess.org/api/bot/account/upgrade -H "Authorization: Bearer <token>"`
+
+Then run: `LICHESS_TOKEN=<token> python3 tools/lichess_bot.py`
+
+## Running on a phone (Termux)
+
+The engine is plain C11 and builds unchanged under Termux:
+
+```sh
+pkg install git && git clone <this repo> && cd chess
+bash tools/termux-setup.sh
+```
+
+That installs clang/make/python/stockfish, builds, self-tests, and leaves you
+able to run Stockfish matches (`--upload` logs them to Supabase) or the
+lichess bot straight from the phone. Use `termux-wake-lock` to keep long
+matches alive with the screen off.
+
+## How "learning" works here
+
+The engine itself is a static hand-crafted evaluation — playing games does
+not change it by itself. The learning loop is:
+
+1. Every game (match runner, lichess) is logged to Supabase with its PGN.
+2. Periodically, the logged positions + game results become training data
+   for **Texel tuning**: fit all eval weights (PSTs, pawn terms, king
+   safety...) so the eval best predicts actual game outcomes.
+3. The tuned weights become the next engine version, gated by a 100+ game
+   self-play match against the previous version.
+
+More games logged = better tuning data, so leaving the phone farming
+Stockfish games genuinely feeds the pipeline.
+
 ## Architecture
 
 | File            | Part | What it does |
