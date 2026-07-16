@@ -10,6 +10,7 @@
 #include "move.h"
 #include "perft.h"
 #include "eval.h"
+#include "eval_strategy.h"
 #include "tune.h"
 #include "uci.h"
 
@@ -77,6 +78,28 @@ int main(int argc, char **argv) {
 
     if (argc >= 3 && strcmp(argv[1], "tune") == 0) {
         tune_run(argv[2]);
+        return 0;
+    }
+
+    // Batch eval explainer: FEN per stdin line -> per-strategy breakdown.
+    // Output per line: "name raw eff_weight" x11 then "TOTAL <cp>".
+    if (argc >= 2 && strcmp(argv[1], "evalfens") == 0) {
+        StrategyWeights sw;
+        eval_default_strategy_weights(&sw);
+        eval_load_strategy_weights("strategy_weights.txt", &sw);
+        char line[256];
+        while (fgets(line, sizeof(line), stdin)) {
+            line[strcspn(line, "\r\n")] = 0;
+            if (!line[0]) continue;
+            Board bd;
+            board_from_fen(&bd, line);
+            int raw[STRAT_COUNT];
+            float eff[STRAT_COUNT];
+            int total = eval_explain(&bd, &sw, raw, eff);
+            for (int i = 0; i < STRAT_COUNT; i++)
+                printf("%s %d %.3f\n", strategy_names[i], raw[i], eff[i]);
+            printf("TOTAL %d\n", total);
+        }
         return 0;
     }
 

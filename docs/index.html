@@ -263,11 +263,12 @@
             "DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
             "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE",
             "DEFENDER_LOGISTICS", "KING_ACTIVITY", "PAWN_PROMOTION",
-            "OPPOSITION", "MATERIAL"
+            "OPPOSITION", "MATERIAL", "COORDINATION"
         ];
         const STRATEGY_COLORS = [
             "#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8",
-            "#F7DC6F", "#BB8FCE", "#85C1E2", "#F8B739", "#52C9A3", "#FF6B9D"
+            "#F7DC6F", "#BB8FCE", "#85C1E2", "#F8B739", "#52C9A3",
+            "#FF6B9D", "#E67E22"
         ];
 
         // Read-only anon key (RLS: select on weight tables, append-only elsewhere)
@@ -281,21 +282,26 @@
             } catch { return null; }
         }
 
-        // Full weight-learning history: every game logs 11 rows (one per
-        // strategy); consecutive 11-row blocks are snapshots in time order.
+        // Full weight-learning history: every game logs one row per strategy
+        // in index order; a new snapshot starts whenever the index wraps
+        // (handles historic 11-strategy rows and current 12-strategy rows).
         async function fetchWeightHistory() {
             const rows = await fetchJSON(
-                `${SUPABASE_URL}/rest/v1/strategy_weights?select=strategy_idx,weight&order=id.asc&limit=11000`,
+                `${SUPABASE_URL}/rest/v1/strategy_weights?select=strategy_idx,weight&order=id.asc&limit=12000`,
                 { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
             if (!rows || rows.length < 11) return null;
             const snaps = [];
-            for (let i = 0; i + 11 <= rows.length; i += 11) {
-                const snap = new Array(11).fill(1.0);
-                for (let j = 0; j < 11; j++)
-                    snap[rows[i + j].strategy_idx] = rows[i + j].weight;
-                snaps.push(snap);
+            let snap = null, lastIdx = 99;
+            for (const row of rows) {
+                if (row.strategy_idx <= lastIdx) {
+                    if (snap) snaps.push(snap);
+                    snap = new Array(STRATEGY_NAMES.length).fill(1.0);
+                }
+                snap[row.strategy_idx] = row.weight;
+                lastIdx = row.strategy_idx;
             }
-            return snaps;
+            if (snap) snaps.push(snap);
+            return snaps.length ? snaps : null;
         }
 
         async function loadData() {
@@ -631,6 +637,29 @@
                     html += `<br><b>Captures:</b> ${PIECE_NAME[m.captured]} (${fmt(m.cap_value)} material)`;
                 if (m.promo)
                     html += `<br><b>Promotes to:</b> ${PIECE_NAME[m.promo]} (piece value now ${m.mat[0]} mg)`;
+
+                // Dynamic engine eval: what each strategy actually scored in
+                // THIS position (pawn structure re-pricing bishops, blocked
+                // lines, promotion races) — not static tables.
+                if (m.strat) {
+                    const prev = curPly > 0 ? g.moves[curPly - 1].strat : null;
+                    const rows = Object.entries(m.strat)
+                        .map(([k, v]) => {
+                            const eff = m.eff ? (m.eff[k] || 1) : 1;
+                            const d = prev ? v - (prev[k] || 0) : null;
+                            return { k, v, c: Math.round(v * eff), d };
+                        })
+                        .filter(r => r.v !== 0 || (r.d !== null && r.d !== 0))
+                        .sort((a, b) => Math.abs(b.c) - Math.abs(a.c));
+                    html += `<br><b>Engine strategy scores (this position, White POV):</b>` +
+                        `<table style="width:100%;font-size:0.9em;margin-top:4px">` +
+                        `<tr><th style="text-align:left">strategy</th><th>raw</th><th>weighted</th><th>Δ vs prev</th></tr>` +
+                        rows.map(r =>
+                            `<tr><td>${r.k}</td><td style="text-align:right">${fmt(r.v)}</td>` +
+                            `<td style="text-align:right">${fmt(r.c)}</td>` +
+                            `<td style="text-align:right">${r.d === null ? '—' : fmt(r.d)}</td></tr>`).join('') +
+                        `</table><b>Engine eval:</b> ${fmt(m.eval)} cp`;
+                }
                 panel.innerHTML = html;
             }
 

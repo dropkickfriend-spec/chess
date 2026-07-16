@@ -35,9 +35,15 @@ typedef enum {
 
     // All-phase
     STRAT_MATERIAL,
+    STRAT_COORDINATION,   // pieces working together (own weight set below)
 
     STRAT_COUNT  // Total number of strategies
 } StrategyType;
+
+// Coordination feature weights (centipawns per instance), learned by the
+// Texel tuner through the eval.c registry: MUTUAL_DEFENSE, BATTERY,
+// OUTPOST, FOCAL_PRESSURE, PAWN_PIECE_SYNC.
+#define COORD_N 5
 
 // Strategy weight config (loaded from file, updated after each game)
 typedef struct {
@@ -59,5 +65,13 @@ int eval_save_strategy_weights(const char *path, const StrategyWeights *weights)
 
 // Get default strategy weights
 void eval_default_strategy_weights(StrategyWeights *weights);
+
+// Strategy names indexed by StrategyType
+extern const char *strategy_names[STRAT_COUNT];
+
+// Per-strategy breakdown for tooling: raw scores (White POV) and effective
+// mean-normalised weights. Returns the total, White POV.
+int eval_explain(const Board *bd, const StrategyWeights *w,
+                 int raw_out[STRAT_COUNT], float eff_out[STRAT_COUNT]);
 
 #endif

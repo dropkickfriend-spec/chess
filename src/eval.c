@@ -111,6 +111,11 @@ int CHEB(int a, int b) {
     return rank_diff > file_diff ? rank_diff : file_diff;
 }
 
+// Coordination feature weights (cp per instance): mutual defense, battery,
+// outpost, focal pressure, pawn-piece sync. Seeds only set the unit scale —
+// magnitudes are learned from game outcomes via the tuning registry.
+int coord_w[5] = { 4, 4, 4, 4, 4 };
+
 // Scalar terms are plain ints (uppercase kept from their #define past) so
 // the Texel tuner can adjust them through the registry below.
 int ISOLATED_MG  = -10;
@@ -141,6 +146,7 @@ const ParamBlock eval_params[] = {
     { "BISHOP_PAIR_EG", &BISHOP_PAIR_EG, 1 },
     { "ROOK_OPEN", &ROOK_OPEN, 1 }, { "ROOK_SEMIOPEN", &ROOK_SEMIOPEN, 1 },
     { "SHIELD_BONUS", &SHIELD_BONUS, 1 },
+    { "coord_w", coord_w, 5 },
 };
 const int eval_params_n = sizeof(eval_params) / sizeof(eval_params[0]);
 

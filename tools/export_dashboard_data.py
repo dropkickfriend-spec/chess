@@ -174,6 +174,33 @@ def move_record(board, move):
     return rec
 
 
+import subprocess
+
+STRATS = ["DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
+          "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE",
+          "DEFENDER_LOGISTICS", "KING_ACTIVITY", "PAWN_PROMOTION",
+          "OPPOSITION", "MATERIAL"]
+
+
+def eval_breakdowns(fens):
+    """Run the engine's evalfens mode: dynamic per-strategy scores per FEN."""
+    proc = subprocess.run([os.path.join(ROOT, "chess"), "evalfens"],
+                          input="\n".join(fens) + "\n",
+                          capture_output=True, text=True, cwd=ROOT)
+    out, cur = [], {}
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        if parts[0] == "TOTAL":
+            cur["TOTAL"] = int(parts[1])
+            out.append(cur)
+            cur = {}
+        elif len(parts) == 3:
+            cur[parts[0]] = [int(parts[1]), float(parts[2])]
+    return out
+
+
 def main():
     log_path = os.path.join(ROOT, "data", "games_log.pgn")
     games = []
@@ -194,6 +221,15 @@ def main():
             board.push(move)
             rec["fen"] = board.fen()
             moves.append(rec)
+
+        # Dynamic eval: the engine's own per-strategy scores at every ply,
+        # so pawn-structure/bishop/logistics interactions show per move.
+        breakdowns = eval_breakdowns([m["fen"] for m in moves])
+        if len(breakdowns) == len(moves):
+            for m, bk in zip(moves, breakdowns):
+                m["eval"] = bk.pop("TOTAL")
+                m["strat"] = {k: v[0] for k, v in bk.items()}
+                m["eff"] = {k: v[1] for k, v in bk.items()}
         out_games.append({
             "white": game.headers.get("White", "?"),
             "black": game.headers.get("Black", "?"),

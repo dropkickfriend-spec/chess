@@ -34,13 +34,19 @@ OUTCOME = {
 games_done = 0
 score = 0.0
 
+# Bootstrap: the engine plays every game with its current learned square/
+# piece values (zero human priors at the start), and each retune below
+# starts descent from those same values — so the tables it plays with are
+# the tables it worked out from its own games.
+BOOT_ENV = dict(os.environ, CHESS_WEIGHTS="data/learned_values.txt")
+
 for it in range(1, ITERATIONS + 1):
     print(f"=== training iteration {it}/{ITERATIONS} ===", flush=True)
     subprocess.run(
         ["python3", "tools/match.py", "--engine", "./chess",
          "--stockfish", SF, "--games", "2", "--movetime", MOVETIME,
          "--skill", "20", "--pgn", "/tmp/train_pair.pgn"],
-        check=False)
+        env=BOOT_ENV, check=False)
 
     with open("/tmp/train_pair.pgn") as f:
         while True:
@@ -77,10 +83,11 @@ for it in range(1, ITERATIONS + 1):
             ["python3", "tools/make_dataset.py", "data/texel_dataset.txt",
              "data/games_log.pgn"],
             env=env, check=False)
-        with open("data/learned_values.txt", "w") as out, \
+        with open("data/learned_values.txt.new", "w") as out, \
              open("/tmp/retune.log", "w") as err:
             subprocess.run(["./chess", "tune", "data/texel_dataset.txt"],
-                           stdout=out, stderr=err, check=False)
+                           stdout=out, stderr=err, env=BOOT_ENV, check=False)
+        os.replace("data/learned_values.txt.new", "data/learned_values.txt")
 
 print(f"\ntraining done: {score}/{games_done} "
       f"({100 * score / max(games_done, 1):.0f}%) vs Stockfish skill 20",

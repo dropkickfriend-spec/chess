@@ -276,13 +276,16 @@ static int eval_attack_potential(const Board *bd, int phase) {
     return mg * phase / 24;  // Only middlegame
 }
 
-// Strategy: DEFENDER_LOGISTICS — pawn moves should consider the mobility they
-// release for other pieces next move. For each bishop/rook/queen we compare
-// actual mobility against mobility with our own pawns lifted off the board;
-// the gap is latent activity a pawn move could unlock. Penalising the gap
-// makes the search favour pawn moves that open lines for the pieces behind
-// them (and avoid ones that seal them in). Knights are scored by how many of
-// their landing squares our own pawns occupy.
+// Strategy: DEFENDER_LOGISTICS — the logistical freedom our own men deny
+// each other; a main purpose of any move is releasing it. For every
+// bishop/rook/queen we compare actual mobility against mobility with (a)
+// our pawns lifted and (b) all our men lifted: the gaps are latent activity
+// that a pawn push or a piece stepping aside would unlock. Pawn blockage
+// costs full price (pawns are slow, semi-permanent walls); piece blockage
+// half (a friend can vacate next move). Every line-opening move — e4
+// freeing the f1-bishop, a knight leaving the c1-bishop's diagonal — gains
+// through this term, and its learned strategy weight can rise to supersede
+// the others in the relative-weight budget when outcomes back it.
 static int eval_pawn_logistics(const Board *bd, int phase) {
     int mg = 0, eg = 0;
     U64 occ = bd->occ[BOTH];
@@ -290,48 +293,57 @@ static int eval_pawn_logistics(const Board *bd, int phase) {
     for (int side = WHITE; side <= BLACK; side++) {
         int sign = side == WHITE ? 1 : -1;
         int base = side == WHITE ? WP : BP;
+        U64 own = bd->occ[side];
         U64 own_pawns = bd->bb[base];
-        U64 occ_open = occ & ~own_pawns;
+        U64 occ_np   = occ & ~own_pawns;   // our pawns lifted
+        U64 occ_free = occ & ~own;         // all our men lifted
 
-        // Bishops: diagonals sealed by own pawns hurt most in the middlegame
+        // Bishops: sealed diagonals hurt most in the middlegame
         U64 bb = bd->bb[base + 2];
         while (bb) {
             int sq = LSB(bb); POP_BIT(bb, sq);
-            int blocked = COUNT(get_bishop_attacks(sq, occ_open))
-                        - COUNT(get_bishop_attacks(sq, occ));
-            mg -= sign * blocked * 3;
-            eg -= sign * blocked * 2;
+            int now = COUNT(get_bishop_attacks(sq, occ));
+            int np  = COUNT(get_bishop_attacks(sq, occ_np));
+            int fr  = COUNT(get_bishop_attacks(sq, occ_free));
+            int by_pawn = np - now, by_piece = fr - np;
+            mg -= sign * (by_pawn * 3 + (by_piece * 3 + 1) / 2);
+            eg -= sign * (by_pawn * 2 + by_piece);
         }
 
-        // Rooks: files/ranks plugged by own pawns
+        // Rooks: plugged files/ranks
         bb = bd->bb[base + 3];
         while (bb) {
             int sq = LSB(bb); POP_BIT(bb, sq);
-            int blocked = COUNT(get_rook_attacks(sq, occ_open))
-                        - COUNT(get_rook_attacks(sq, occ));
-            mg -= sign * blocked * 2;
-            eg -= sign * blocked * 2;
+            int now = COUNT(get_rook_attacks(sq, occ));
+            int np  = COUNT(get_rook_attacks(sq, occ_np));
+            int fr  = COUNT(get_rook_attacks(sq, occ_free));
+            int by_pawn = np - now, by_piece = fr - np;
+            mg -= sign * (by_pawn * 2 + by_piece);
+            eg -= sign * (by_pawn * 2 + by_piece);
         }
 
         // Queens: half weight, a queen usually has alternate routes
         bb = bd->bb[base + 4];
         while (bb) {
             int sq = LSB(bb); POP_BIT(bb, sq);
-            int blocked = COUNT(get_queen_attacks(sq, occ_open))
-                        - COUNT(get_queen_attacks(sq, occ));
-            mg -= sign * blocked;
-            eg -= sign * blocked;
+            int now = COUNT(get_queen_attacks(sq, occ));
+            int np  = COUNT(get_queen_attacks(sq, occ_np));
+            int fr  = COUNT(get_queen_attacks(sq, occ_free));
+            int by_pawn = np - now, by_piece = (fr - np + 1) / 2;
+            mg -= sign * (by_pawn + by_piece);
+            eg -= sign * (by_pawn + by_piece);
         }
 
-        // Knights: own pawns squatting on their landing squares
+        // Knights: own men squatting on landing squares (pawns full price,
+        // pieces half — they can step aside)
         bb = bd->bb[base + 1];
         while (bb) {
             int sq = LSB(bb); POP_BIT(bb, sq);
-            int crowded = COUNT(knight_attacks[sq] & own_pawns);
-            mg -= sign * crowded * 2;
-            eg -= sign * crowded;
+            int crowd_pawn  = COUNT(knight_attacks[sq] & own_pawns);
+            int crowd_piece = COUNT(knight_attacks[sq] & own & ~own_pawns);
+            mg -= sign * (crowd_pawn * 2 + crowd_piece);
+            eg -= sign * crowd_pawn;
         }
-
     }
 
     return (mg * phase + eg * (24 - phase)) / 24;
@@ -482,17 +494,115 @@ int eval_save_strategy_weights(const char *path, const StrategyWeights *w) {
     return 1;
 }
 
-// Main strategy-based evaluation.
-//
-// Strategies compete for a fixed evaluation budget: every weight is divided
-// by the phase-weighted mean of all enabled weights on this move, so only
-// ratios matter — raising PAWN_PROMOTION (or KING_SAFETY) automatically
-// dilutes MATERIAL and everything else on that same move, and uniformly
-// inflating all weights changes nothing.
-int eval_with_strategies(const Board *bd, const StrategyWeights *w) {
-    int phase;
-    int raw[STRAT_COUNT];
+const char *strategy_names[STRAT_COUNT] = {
+    "DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
+    "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE",
+    "DEFENDER_LOGISTICS", "KING_ACTIVITY", "PAWN_PROMOTION",
+    "OPPOSITION", "MATERIAL", "COORDINATION"
+};
 
+extern int coord_w[COORD_N];
+
+// Strategy: COORDINATION — pieces working together, five patterns each
+// priced by its own learnable weight (coord_w, tuned from outcomes):
+//   0 mutual defense: non-pawn pieces covered by a friendly attacker
+//   1 batteries: R/Q doubled on a file, B/Q sharing a live diagonal
+//   2 outposts: N/B on a pawn-guarded square no enemy pawn can ever attack
+//   3 focal pressure: enemy-occupied squares hit by 2+ of our pieces
+//   4 pawn-piece sync: pawn advance squares covered by our own pieces —
+//     a push (like e4) is worth more when the army stands behind it
+static int eval_coordination(const Board *bd, int phase) {
+    (void)phase;
+    int score = 0;
+    U64 occ = bd->occ[BOTH];
+
+    for (int side = WHITE; side <= BLACK; side++) {
+        int sign = side == WHITE ? 1 : -1;
+        int base = side == WHITE ? WP : BP;
+        U64 own = bd->occ[side];
+        U64 own_pawns = bd->bb[base];
+        U64 enemy = bd->occ[!side];
+        U64 enemy_pawns = bd->bb[side == WHITE ? BP : WP];
+
+        U64 pawn_cover = 0;
+        U64 pb = own_pawns;
+        while (pb) {
+            int s = LSB(pb); POP_BIT(pb, s);
+            pawn_cover |= pawn_attacks[side][s];
+        }
+
+        U64 all_att = pawn_cover;      // union of our attack coverage
+        int hits[64] = {0};            // attackers per enemy-occupied square
+        int batteries = 0, outposts = 0;
+
+        for (int pt = 1; pt <= 5; pt++) {
+            U64 b = bd->bb[base + pt];
+            while (b) {
+                int sq = LSB(b); POP_BIT(b, sq);
+                U64 att;
+                switch (pt) {
+                    case 1: att = knight_attacks[sq]; break;
+                    case 2: att = get_bishop_attacks(sq, occ); break;
+                    case 3: att = get_rook_attacks(sq, occ); break;
+                    case 4: att = get_queen_attacks(sq, occ); break;
+                    default: att = king_attacks[sq]; break;
+                }
+                all_att |= att;
+
+                U64 t = att & enemy;
+                while (t) { int e = LSB(t); POP_BIT(t, e); hits[e]++; }
+
+                // Batteries: rook sees own rook/queen down its file;
+                // bishop sees own queen down its diagonal.
+                if (pt == 3 && (get_rook_attacks(sq, occ) & file_mask[sq % 8]
+                                & (bd->bb[base + 3] | bd->bb[base + 4])))
+                    batteries++;
+                if (pt == 2 && (get_bishop_attacks(sq, occ) & bd->bb[base + 4]))
+                    batteries++;
+
+                // Outposts: minor piece on a pawn-guarded square, past the
+                // reach of every enemy pawn on the adjacent files.
+                if ((pt == 1 || pt == 2)
+                    && (pawn_cover & (1ULL << sq))
+                    && !(passed_mask[side][sq] & adj_files[sq % 8] & enemy_pawns)) {
+                    int rel_rank = side == WHITE ? sq / 8 : 7 - sq / 8;
+                    if (rel_rank >= 3 && rel_rank <= 5) outposts++;
+                }
+            }
+        }
+
+        int mutual = COUNT(all_att & own & ~own_pawns);
+
+        int focal = 0;
+        U64 e = enemy;
+        while (e) {
+            int s = LSB(e); POP_BIT(e, s);
+            if (hits[s] > 1) focal += hits[s] - 1;
+        }
+
+        int pawn_sync = 0;
+        pb = own_pawns;
+        while (pb) {
+            int s = LSB(pb); POP_BIT(pb, s);
+            int front = side == WHITE ? s + 8 : s - 8;
+            if (front >= 0 && front < 64 && (all_att & (1ULL << front)))
+                pawn_sync++;
+        }
+
+        score += sign * (coord_w[0] * mutual
+                       + coord_w[1] * batteries
+                       + coord_w[2] * outposts
+                       + coord_w[3] * focal
+                       + coord_w[4] * pawn_sync);
+    }
+
+    return score;
+}
+
+// Shared core: raw per-strategy scores (White POV, danger discount applied)
+// and the phase-weighted mean of enabled weights.
+static void gather_raw(const Board *bd, int *phase_out, int raw[STRAT_COUNT]) {
+    int phase;
     raw[STRAT_MATERIAL]            = eval_material(bd, &phase);
     raw[STRAT_PAWN_STRUCTURE]      = eval_pawn_structure(bd, phase);
     raw[STRAT_PIECE_ACTIVITY]      = eval_piece_activity(bd, phase);
@@ -504,6 +614,7 @@ int eval_with_strategies(const Board *bd, const StrategyWeights *w) {
     raw[STRAT_KING_ACTIVITY]       = eval_king_activity(bd, phase);
     raw[STRAT_OPPOSITION]          = eval_opposition(bd, phase);
     raw[STRAT_PAWN_PROMOTION]      = eval_pawn_promotion(bd, phase);
+    raw[STRAT_COORDINATION]        = eval_coordination(bd, phase);
 
     // A queen is worth less when someone is getting mated — yours if the
     // attack is on you, theirs if you can throw it at their king. Material's
@@ -513,6 +624,11 @@ int eval_with_strategies(const Board *bd, const StrategyWeights *w) {
     if (danger > 400) danger = 400;
     raw[STRAT_MATERIAL] = raw[STRAT_MATERIAL] * 400 / (400 + danger);
 
+    *phase_out = phase;
+}
+
+static float weight_mean(const StrategyWeights *w, int phase,
+                         float eff_out[STRAT_COUNT]) {
     // Per-move activity: how much of each strategy participates right now.
     // Phase-tapered terms only claim their share of the weight budget.
     float po = (float)phase / 24.0f, pe = 1.0f - po;
@@ -521,6 +637,7 @@ int eval_with_strategies(const Board *bd, const StrategyWeights *w) {
     act[STRAT_PAWN_STRUCTURE]      = 1.0f;
     act[STRAT_PIECE_ACTIVITY]      = 1.0f;
     act[STRAT_DEFENDER_LOGISTICS]  = 1.0f;
+    act[STRAT_COORDINATION]        = 1.0f;
     act[STRAT_KING_SAFETY_OPENING] = po;
     act[STRAT_ATTACK_POTENTIAL]    = po;
     act[STRAT_DEVELOPMENT]         = po;
@@ -535,10 +652,29 @@ int eval_with_strategies(const Board *bd, const StrategyWeights *w) {
     float wmean = asum > 0.001f ? wsum / asum : 1.0f;
     if (wmean < 0.05f) wmean = 0.05f;   // degenerate weight files stay sane
 
+    if (eff_out)
+        for (int i = 0; i < STRAT_COUNT; i++)
+            eff_out[i] = w->enabled[i] ? w->weight[i] / wmean : 0.0f;
+    return wmean;
+}
+
+// Main strategy-based evaluation.
+//
+// Strategies compete for a fixed evaluation budget: every weight is divided
+// by the phase-weighted mean of all enabled weights on this move, so only
+// ratios matter — raising PAWN_PROMOTION (or KING_SAFETY) automatically
+// dilutes MATERIAL and everything else on that same move, and uniformly
+// inflating all weights changes nothing.
+int eval_with_strategies(const Board *bd, const StrategyWeights *w) {
+    int phase, raw[STRAT_COUNT];
+    float eff[STRAT_COUNT];
+
+    gather_raw(bd, &phase, raw);
+    weight_mean(w, phase, eff);
+
     float total = 0.0f;
     for (int i = 0; i < STRAT_COUNT; i++)
-        if (w->enabled[i])
-            total += raw[i] * (w->weight[i] / wmean);
+        total += raw[i] * eff[i];
 
     // No learned bonus may ever rival a mate: search scores mates ±32000,
     // and this clamp keeps runaway relative weights out of that window.
@@ -547,4 +683,19 @@ int eval_with_strategies(const Board *bd, const StrategyWeights *w) {
     if (score < -16000) score = -16000;
 
     return bd->side == WHITE ? score : -score;
+}
+
+// Tooling hook: per-strategy raw scores (White POV) plus each strategy's
+// effective (mean-normalised) weight in this position. Returns the total,
+// White POV, unclamped by side to move.
+int eval_explain(const Board *bd, const StrategyWeights *w,
+                 int raw_out[STRAT_COUNT], float eff_out[STRAT_COUNT]) {
+    int phase;
+    gather_raw(bd, &phase, raw_out);
+    weight_mean(w, phase, eff_out);
+
+    float total = 0.0f;
+    for (int i = 0; i < STRAT_COUNT; i++)
+        total += raw_out[i] * eff_out[i];
+    return (int)total;
 }
