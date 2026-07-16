@@ -110,10 +110,17 @@
             user-select: none;
         }
         .sq {
-            aspect-ratio: 1; display: flex;
+            aspect-ratio: 1; display: flex; position: relative;
             align-items: center; justify-content: center;
             font-size: clamp(20px, 4.2vw, 36px); line-height: 1;
         }
+        .sq .pv {
+            position: absolute; bottom: 1px; right: 2px;
+            font-size: 9px; font-family: Consolas, monospace; line-height: 1;
+            pointer-events: none;
+        }
+        .sq .pv.pos { color: #7dffa8; } .sq .pv.neg { color: #ff8888; }
+        .sq .pv.zero { color: #99a; }
         .sq.light { background: #4a5a80; }
         .sq.dark  { background: #2e3a5c; }
         .sq.hl-from { box-shadow: inset 0 0 0 3px #ffaa00; }
@@ -147,6 +154,29 @@
         }
         .valpanel b { color: #00d4ff; }
         .valpanel .pos { color: #00ff88; } .valpanel .neg { color: #ff6666; }
+        .valtotals {
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 8px; margin-top: 12px;
+        }
+        .valtotals .tot {
+            background: rgba(0, 100, 150, 0.2); border-radius: 4px;
+            padding: 8px 10px; font-size: 0.88em; line-height: 1.6;
+        }
+        .valtotals .tot b { color: #00d4ff; }
+        .piecetable-wrap {
+            max-height: 260px; overflow-y: auto; margin-top: 8px;
+            border: 1px solid rgba(0, 212, 255, 0.25); border-radius: 6px;
+        }
+        .piecetable {
+            width: 100%; border-collapse: collapse;
+            font-family: Consolas, monospace; font-size: 0.85em;
+        }
+        .piecetable th, .piecetable td {
+            padding: 4px 8px; border-bottom: 1px solid rgba(0, 212, 255, 0.12);
+            text-align: right;
+        }
+        .piecetable th { position: sticky; top: 0; background: #253055; }
+        .piecetable td:first-child, .piecetable th:first-child { text-align: left; }
     </style>
 </head>
 <body>
@@ -181,10 +211,20 @@
                         <button id="btnPrev">◀ Prev</button>
                         <button id="btnNext">Next ▶</button>
                         <button id="btnEnd">End ⏭</button>
+                        <button id="btnVals">Square values: on</button>
                     </div>
                     <div class="valpanel" id="valPanel">Select a move to see its piece and square values.</div>
+                    <div class="valtotals" id="valTotals"></div>
                 </div>
-                <div class="movelist" id="moveList"></div>
+                <div>
+                    <div class="movelist" id="moveList"></div>
+                    <div class="piecetable-wrap">
+                        <table class="piecetable">
+                            <thead><tr><th>Piece @ square</th><th>Material mg/eg</th><th>Square mg/eg</th></tr></thead>
+                            <tbody id="pieceTable"></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -376,7 +416,112 @@
         const GLYPH = { K:"♔",Q:"♕",R:"♖",B:"♗",N:"♘",P:"♙",
                         k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟" };
         const PIECE_NAME = { P:"pawn", N:"knight", B:"bishop", R:"rook", Q:"queen", K:"king" };
-        let GAMES = [], curGame = 0, curPly = -1;
+        let GAMES = [], curGame = 0, curPly = -1, showVals = true;
+
+        // ---- engine value tables (mirror src/eval.c) ----
+        const MAT_MG = { P:100, N:320, B:330, R:500, Q:900, K:0 };
+        const MAT_EG = { P:120, N:300, B:330, R:520, Q:920, K:0 };
+        const PST_MG = {
+            P: [ 0,0,0,0,0,0,0,0, 50,50,50,50,50,50,50,50, 10,10,20,30,30,20,10,10,
+                 5,5,10,25,25,10,5,5, 0,0,0,20,20,0,0,0, 5,-5,-10,0,0,-10,-5,5,
+                 5,10,10,-20,-20,10,10,5, 0,0,0,0,0,0,0,0 ],
+            N: [ -50,-40,-30,-30,-30,-30,-40,-50, -40,-20,0,0,0,0,-20,-40,
+                 -30,0,10,15,15,10,0,-30, -30,5,15,20,20,15,5,-30,
+                 -30,0,15,20,20,15,0,-30, -30,5,10,15,15,10,5,-30,
+                 -40,-20,0,5,5,0,-20,-40, -50,-40,-30,-30,-30,-30,-40,-50 ],
+            B: [ -20,-10,-10,-10,-10,-10,-10,-20, -10,0,0,0,0,0,0,-10,
+                 -10,0,5,10,10,5,0,-10, -10,5,5,10,10,5,5,-10,
+                 -10,0,10,10,10,10,0,-10, -10,10,10,10,10,10,10,-10,
+                 -10,5,0,0,0,0,5,-10, -20,-10,-10,-10,-10,-10,-10,-20 ],
+            R: [ 0,0,0,0,0,0,0,0, 5,10,10,10,10,10,10,5, -5,0,0,0,0,0,0,-5,
+                 -5,0,0,0,0,0,0,-5, -5,0,0,0,0,0,0,-5, -5,0,0,0,0,0,0,-5,
+                 -5,0,0,0,0,0,0,-5, 0,0,0,5,5,0,0,0 ],
+            Q: [ -20,-10,-10,-5,-5,-10,-10,-20, -10,0,0,0,0,0,0,-10,
+                 -10,0,5,5,5,5,0,-10, -5,0,5,5,5,5,0,-5, 0,0,5,5,5,5,0,-5,
+                 -10,5,5,5,5,5,0,-10, -10,0,5,0,0,0,0,-10, -20,-10,-10,-5,-5,-10,-10,-20 ],
+            K: [ -30,-40,-40,-50,-50,-40,-40,-30, -30,-40,-40,-50,-50,-40,-40,-30,
+                 -30,-40,-40,-50,-50,-40,-40,-30, -30,-40,-40,-50,-50,-40,-40,-30,
+                 -20,-30,-30,-40,-40,-30,-30,-20, -10,-20,-20,-20,-20,-20,-20,-10,
+                 20,20,0,0,0,0,20,20, 20,30,10,0,0,10,30,20 ]
+        };
+        const PAWN_EG_T = [ 0,0,0,0,0,0,0,0, 80,80,80,80,80,80,80,80,
+                            50,50,50,50,50,50,50,50, 30,30,30,30,30,30,30,30,
+                            15,15,15,15,15,15,15,15, 5,5,5,5,5,5,5,5,
+                            5,5,5,5,5,5,5,5, 0,0,0,0,0,0,0,0 ];
+        const KING_EG_T = [ -50,-40,-30,-20,-20,-30,-40,-50, -30,-20,-10,0,0,-10,-20,-30,
+                            -30,-10,20,30,30,20,-10,-30, -30,-10,30,40,40,30,-10,-30,
+                            -30,-10,30,40,40,30,-10,-30, -30,-10,20,30,30,20,-10,-30,
+                            -30,-30,0,0,0,0,-30,-30, -50,-30,-30,-30,-30,-30,-30,-50 ];
+
+        // Same index convention as the engine: White reads the tables
+        // rank-flipped, Black reads them as laid out.
+        function tblIdx(sq, isWhite) {
+            const r = sq >> 3, f = sq & 7;
+            return isWhite ? (7 - r) * 8 + f : sq;
+        }
+        function pieceValues(letter, sq) {
+            const isWhite = letter === letter.toUpperCase();
+            const P = letter.toUpperCase();
+            const idx = tblIdx(sq, isWhite);
+            let pstEg;
+            if (P === 'P') pstEg = PAWN_EG_T[idx];
+            else if (P === 'K') pstEg = KING_EG_T[idx];
+            else pstEg = PST_MG[P][idx];
+            return { piece: P, white: isWhite,
+                     matMg: MAT_MG[P], matEg: MAT_EG[P],
+                     pstMg: PST_MG[P][idx], pstEg: pstEg };
+        }
+        function sqName(sq) { return "abcdefgh"[sq & 7] + ((sq >> 3) + 1); }
+
+        // Every piece on the board with its values, from a FEN.
+        function boardValues(fen) {
+            const out = [];
+            const ranks = fen.split(' ')[0].split('/');
+            ranks.forEach((rank, i) => {
+                let f = 0;
+                for (const ch of rank) {
+                    if (/\d/.test(ch)) { f += +ch; continue; }
+                    const sq = (7 - i) * 8 + f;
+                    out.push({ sq, letter: ch, ...pieceValues(ch, sq) });
+                    f++;
+                }
+            });
+            return out;
+        }
+
+        function updateValueViews(fen) {
+            const pieces = boardValues(fen);
+            const tot = { w: { mat: 0, pst: 0 }, b: { mat: 0, pst: 0 } };
+            pieces.forEach(p => {
+                const t = tot[p.white ? 'w' : 'b'];
+                t.mat += p.matMg;
+                t.pst += p.pstMg;
+            });
+
+            const order = { K: 0, Q: 1, R: 2, B: 3, N: 4, P: 5 };
+            pieces.sort((a, b) => (b.white - a.white) ||
+                                  (order[a.piece] - order[b.piece]) || (a.sq - b.sq));
+            const tbody = document.getElementById('pieceTable');
+            tbody.innerHTML = pieces.map(p => {
+                const cls = v => v > 0 ? 'pos' : v < 0 ? 'neg' : '';
+                return `<tr>
+                    <td>${GLYPH[p.letter]} ${p.white ? 'White' : 'Black'} ${PIECE_NAME[p.piece]} @ <b>${sqName(p.sq)}</b></td>
+                    <td>${p.matMg} / ${p.matEg}</td>
+                    <td><span class="${cls(p.pstMg)}">${p.pstMg > 0 ? '+' : ''}${p.pstMg}</span> /
+                        <span class="${cls(p.pstEg)}">${p.pstEg > 0 ? '+' : ''}${p.pstEg}</span></td>
+                </tr>`;
+            }).join('');
+
+            const dMat = tot.w.mat - tot.b.mat, dPst = tot.w.pst - tot.b.pst;
+            document.getElementById('valTotals').innerHTML = `
+                <div class="tot"><b>White totals</b><br>
+                    material ${tot.w.mat} · squares ${tot.w.pst > 0 ? '+' : ''}${tot.w.pst}</div>
+                <div class="tot"><b>Black totals</b><br>
+                    material ${tot.b.mat} · squares ${tot.b.pst > 0 ? '+' : ''}${tot.b.pst}</div>
+                <div class="tot" style="grid-column: 1 / -1"><b>Net (White − Black)</b>:
+                    material ${dMat > 0 ? '+' : ''}${dMat} · squares ${dPst > 0 ? '+' : ''}${dPst}
+                    · combined ${dMat + dPst > 0 ? '+' : ''}${dMat + dPst}</div>`;
+        }
 
         function renderBoard(fen, hlFrom, hlTo) {
             const board = document.getElementById('board');
@@ -386,17 +531,28 @@
                 let f = 0;
                 for (const ch of rank) {
                     if (/\d/.test(ch)) {
-                        for (let i = 0; i < +ch; i++) addSq(board, r, f++, '');
-                    } else addSq(board, r, f++, GLYPH[ch] || '');
+                        for (let i = 0; i < +ch; i++) addSq(board, r, f++, '', null);
+                    } else addSq(board, r, f++, GLYPH[ch] || '', ch);
                 }
             });
-            function addSq(board, r, f, glyph) {
-                const sqName = "abcdefgh"[f] + (8 - r);
+            function addSq(board, r, f, glyph, letter) {
+                const name = "abcdefgh"[f] + (8 - r);
                 const d = document.createElement('div');
                 d.className = 'sq ' + (((r + f) % 2) ? 'dark' : 'light');
-                if (sqName === hlFrom) d.classList.add('hl-from');
-                if (sqName === hlTo) d.classList.add('hl-to');
+                if (name === hlFrom) d.classList.add('hl-from');
+                if (name === hlTo) d.classList.add('hl-to');
                 d.textContent = glyph;
+                if (letter && showVals) {
+                    const sq = (7 - r) * 8 + f;
+                    const v = pieceValues(letter, sq).pstMg;
+                    const b = document.createElement('span');
+                    b.className = 'pv ' + (v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero');
+                    b.textContent = (v > 0 ? '+' : '') + v;
+                    d.appendChild(b);
+                    d.title = `${letter === letter.toUpperCase() ? 'White' : 'Black'} ` +
+                        `${PIECE_NAME[letter.toUpperCase()]} @ ${name} — ` +
+                        `material ${MAT_MG[letter.toUpperCase()]} mg, square ${v > 0 ? '+' : ''}${v} mg`;
+                }
                 board.appendChild(d);
             }
         }
@@ -417,6 +573,12 @@
             document.getElementById('btnNext').onclick = () => setPly(curPly + 1);
             document.getElementById('btnEnd').onclick = () =>
                 setPly(GAMES[curGame].moves.length - 1);
+            document.getElementById('btnVals').onclick = () => {
+                showVals = !showVals;
+                document.getElementById('btnVals').textContent =
+                    'Square values: ' + (showVals ? 'on' : 'off');
+                setPly(curPly);
+            };
             document.addEventListener('keydown', e => {
                 if (e.key === 'ArrowLeft') setPly(curPly - 1);
                 if (e.key === 'ArrowRight') setPly(curPly + 1);
@@ -453,10 +615,12 @@
             const panel = document.getElementById('valPanel');
             if (curPly < 0) {
                 renderBoard(START_FEN);
+                updateValueViews(START_FEN);
                 panel.innerHTML = 'Start position — step through moves to see each piece\'s material and square values.';
             } else {
                 const m = g.moves[curPly];
                 renderBoard(m.fen, m.uci.slice(0, 2), m.uci.slice(2, 4));
+                updateValueViews(m.fen);
                 const side = m.color === 'w' ? 'White' : 'Black';
                 let html = `<b>${curPly % 2 ? '' : (curPly / 2 + 1) + '. '}${m.san}</b> — ` +
                     `${side} ${PIECE_NAME[m.piece]} ${m.uci.slice(0,2)}→${m.uci.slice(2,4)}<br>` +
