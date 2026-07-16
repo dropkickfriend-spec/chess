@@ -45,7 +45,7 @@ for it in range(1, ITERATIONS + 1):
     subprocess.run(
         ["python3", "tools/match.py", "--engine", "./chess",
          "--stockfish", SF, "--games", "2", "--movetime", MOVETIME,
-         "--skill", "20", "--pgn", "/tmp/train_pair.pgn"],
+         "--skill", "20", "--pgn", "/tmp/train_pair.pgn", "--upload"],
         env=BOOT_ENV, check=False)
 
     with open("/tmp/train_pair.pgn") as f:
