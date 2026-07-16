@@ -10,7 +10,6 @@ piece value — logged once, reused on every future startup.
 Usage:
   python3 tools/training_loop.py [iterations]     # default 10 (= 20 games)
 """
-import io
 import os
 import shutil
 import subprocess

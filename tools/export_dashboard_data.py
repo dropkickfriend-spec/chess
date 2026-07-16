@@ -178,11 +178,6 @@ import subprocess
 
 import chess.engine
 
-STRATS = ["DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
-          "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE",
-          "DEFENDER_LOGISTICS", "KING_ACTIVITY", "PAWN_PROMOTION",
-          "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN"]
-
 PLAN_DEPTH = 6   # lookahead per exported position for the plan overlay
 
 

@@ -228,9 +228,6 @@ void eval_init(void) {
     }
 }
 
-#define W_IDX(sq) ((7 - (sq) / 8) * 8 + (sq) % 8)
-#define B_IDX(sq) (sq)
-
 // King attack: pieces bearing on the ring around the enemy king accumulate
 // "attack units" (weighted by piece type); the bonus grows quadratically so
 // a coordinated assault scores far more than a lone raider.

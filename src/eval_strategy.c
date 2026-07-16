@@ -9,7 +9,7 @@
 
 // Globals from eval.c (these define all evaluation constants/tables)
 extern int material_mg[6], material_eg[6];
-extern int pst_mg[6][64], pst_eg[6][64];
+extern int pst_mg[6][64];
 extern int pawn_eg[64], king_eg[64];
 extern int passed_mg[8], passed_eg[8];
 extern int ISOLATED_MG, ISOLATED_EG, DOUBLED_MG, DOUBLED_EG;
@@ -23,16 +23,6 @@ extern int king_atk_weight[6];
 extern int CHEB(int a, int b);
 
 static const int phase_w[6] = { 0, 1, 1, 2, 4, 0 };
-
-GamePhase eval_detect_phase(const Board *bd) {
-    int material = 0;
-    for (int i = WN; i <= BQ; i++)
-        material += COUNT(bd->bb[i]) * phase_w[i % 6];
-    
-    if (material >= 20) return PHASE_OPENING;
-    if (material >= 10) return PHASE_MIDDLEGAME;
-    return PHASE_ENDGAME;
-}
 
 // Strategy: MATERIAL — base piece values
 static int eval_material(const Board *bd, int *phase_out) {
@@ -480,16 +470,6 @@ int eval_load_strategy_weights(const char *path, StrategyWeights *w) {
         if (sscanf(line, "weight %d %f", &idx, &wt) == 2 && idx >= 0 && idx < STRAT_COUNT)
             w->weight[idx] = wt;
     }
-    fclose(f);
-    return 1;
-}
-
-int eval_save_strategy_weights(const char *path, const StrategyWeights *w) {
-    FILE *f = fopen(path, "w");
-    if (!f) return 0;
-    
-    for (int i = 0; i < STRAT_COUNT; i++)
-        fprintf(f, "weight %d %f\n", i, w->weight[i]);
     fclose(f);
     return 1;
 }

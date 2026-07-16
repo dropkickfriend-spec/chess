@@ -8,13 +8,6 @@
 #define W_IDX(sq) ((7 - (sq) / 8) * 8 + (sq) % 8)
 #define B_IDX(sq) (sq)
 
-// Game phases
-typedef enum {
-    PHASE_OPENING,
-    PHASE_MIDDLEGAME,
-    PHASE_ENDGAME
-} GamePhase;
-
 // Strategy types
 typedef enum {
     // Opening strategies
@@ -52,17 +45,11 @@ typedef struct {
     int enabled[STRAT_COUNT];  // 1 = enabled, 0 = disabled
 } StrategyWeights;
 
-// Detected game phase
-GamePhase eval_detect_phase(const Board *bd);
-
 // Evaluate using active strategies for this phase
 int eval_with_strategies(const Board *bd, const StrategyWeights *weights);
 
 // Load strategy weights from file
 int eval_load_strategy_weights(const char *path, StrategyWeights *weights);
-
-// Save strategy weights to file
-int eval_save_strategy_weights(const char *path, const StrategyWeights *weights);
 
 // Get default strategy weights
 void eval_default_strategy_weights(StrategyWeights *weights);

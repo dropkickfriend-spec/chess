@@ -11,9 +11,6 @@ Usage:
   Adjusts weights.txt and uploads to Supabase if configured.
 """
 import sys
-import subprocess
-import json
-import os
 import chess
 import chess.pgn
 
