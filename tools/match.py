@@ -144,8 +144,10 @@ def main():
             ours.quit()
             sf.quit()
 
-            # Incomplete games (engine crash, timeout) shouldn't be recorded
-            if not board.is_game_over():
+            # Incomplete games (engine crash, timeout) shouldn't be recorded.
+            # claim_draw matches play_game's loop condition, else games drawn
+            # by repetition/fifty-move get misfiled as incomplete.
+            if not board.is_game_over(claim_draw=True):
                 print(f"game {g+1}: INCOMPLETE (max plies reached at move {board.fullmove_number}), skipped")
                 sys.stdout.flush()
                 continue

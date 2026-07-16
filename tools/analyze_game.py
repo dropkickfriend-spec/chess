@@ -55,6 +55,7 @@ def trace_strategies(pgn_file, engine_path):
     strategy_log = []
 
     for move_num, move in enumerate(game.mainline_moves()):
+        is_pawn_move = board.piece_type_at(move.from_square) == chess.PAWN
         board.push(move)
         phase = detect_phase(board)
 
@@ -66,6 +67,10 @@ def trace_strategies(pgn_file, engine_path):
             active.extend(["PIECE_ACTIVITY", "PAWN_STRUCTURE"])
         else:
             active.extend(["PAWN_PROMOTION"])
+
+        # Pawn moves engage the logistics tradeoff (blockage vs promotion)
+        if is_pawn_move:
+            active.append("DEFENDER_LOGISTICS")
 
         strategy_log.append({
             "move": move_num,

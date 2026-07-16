@@ -140,7 +140,10 @@ static int eval_piece_activity(const Board *bd, int phase) {
             eg += sign * mob * 4;
         }
         
-        // Bishops
+        // Bishops: mobility plus the pawn-complex test — a bishop is worth
+        // more when the opponent's pawns sit on its colour (fixed targets)
+        // and less when our own pawns share its colour (bad bishop).
+        U64 their_pawns = side == WHITE ? bp : wp;
         bb = bd->bb[base + 2];
         while (bb) {
             int sq = LSB(bb); POP_BIT(bb, sq);
@@ -148,6 +151,13 @@ static int eval_piece_activity(const Board *bd, int phase) {
             int mob = COUNT(att & ~own) - 6;
             mg += sign * mob * 3;
             eg += sign * mob * 3;
+
+            const U64 LIGHT = 0x55AA55AA55AA55AAULL;
+            U64 same_colour = GET_BIT(LIGHT, sq) ? LIGHT : ~LIGHT;
+            int targets  = COUNT(their_pawns & same_colour);
+            int blockers = COUNT(own_pawns  & same_colour);
+            mg += sign * (targets * 2 - blockers * 3);
+            eg += sign * (targets * 3 - blockers * 5);
         }
         
         // Rooks
@@ -266,6 +276,94 @@ static int eval_attack_potential(const Board *bd, int phase) {
     return mg * phase / 24;  // Only middlegame
 }
 
+// Strategy: DEFENDER_LOGISTICS — pawn moves should consider the mobility they
+// release for other pieces next move. For each bishop/rook/queen we compare
+// actual mobility against mobility with our own pawns lifted off the board;
+// the gap is latent activity a pawn move could unlock. Penalising the gap
+// makes the search favour pawn moves that open lines for the pieces behind
+// them (and avoid ones that seal them in). Knights are scored by how many of
+// their landing squares our own pawns occupy.
+static int eval_pawn_logistics(const Board *bd, int phase) {
+    int mg = 0, eg = 0;
+    U64 occ = bd->occ[BOTH];
+
+    for (int side = WHITE; side <= BLACK; side++) {
+        int sign = side == WHITE ? 1 : -1;
+        int base = side == WHITE ? WP : BP;
+        U64 own_pawns = bd->bb[base];
+        U64 occ_open = occ & ~own_pawns;
+
+        // Bishops: diagonals sealed by own pawns hurt most in the middlegame
+        U64 bb = bd->bb[base + 2];
+        while (bb) {
+            int sq = LSB(bb); POP_BIT(bb, sq);
+            int blocked = COUNT(get_bishop_attacks(sq, occ_open))
+                        - COUNT(get_bishop_attacks(sq, occ));
+            mg -= sign * blocked * 3;
+            eg -= sign * blocked * 2;
+        }
+
+        // Rooks: files/ranks plugged by own pawns
+        bb = bd->bb[base + 3];
+        while (bb) {
+            int sq = LSB(bb); POP_BIT(bb, sq);
+            int blocked = COUNT(get_rook_attacks(sq, occ_open))
+                        - COUNT(get_rook_attacks(sq, occ));
+            mg -= sign * blocked * 2;
+            eg -= sign * blocked * 2;
+        }
+
+        // Queens: half weight, a queen usually has alternate routes
+        bb = bd->bb[base + 4];
+        while (bb) {
+            int sq = LSB(bb); POP_BIT(bb, sq);
+            int blocked = COUNT(get_queen_attacks(sq, occ_open))
+                        - COUNT(get_queen_attacks(sq, occ));
+            mg -= sign * blocked;
+            eg -= sign * blocked;
+        }
+
+        // Knights: own pawns squatting on their landing squares
+        bb = bd->bb[base + 1];
+        while (bb) {
+            int sq = LSB(bb); POP_BIT(bb, sq);
+            int crowded = COUNT(knight_attacks[sq] & own_pawns);
+            mg -= sign * crowded * 2;
+            eg -= sign * crowded;
+        }
+
+        // Counter-weight: a pawn that cramps its own pieces may still be
+        // right to push when its promotion certainty rises. Credit passed
+        // pawns quadratically by rank, doubled with a clear path, plus a
+        // rule-of-square bonus when the defending king can't catch it —
+        // so the same weight balances blockage cost against promotion gain.
+        int foe = side == WHITE ? BP : WP;
+        U64 their_pawns = bd->bb[foe];
+        bb = own_pawns;
+        while (bb) {
+            int sq = LSB(bb); POP_BIT(bb, sq);
+            if (passed_mask[side][sq] & their_pawns) continue;  // not passed
+
+            int f = sq % 8;
+            int rel_rank = side == WHITE ? sq / 8 : 7 - sq / 8;
+            int cert = rel_rank * rel_rank;              // 1,4,9,16,25,36
+            if (!(passed_mask[side][sq] & file_mask[f] & occ))
+                cert *= 2;                               // path already clear
+
+            int promo_sq = side == WHITE ? 56 + f : f;
+            int ek = LSB(bd->bb[foe + 5]);
+            int steps = 7 - rel_rank - (rel_rank == 1);
+            if (CHEB(ek, promo_sq) - (bd->side != side) > steps)
+                cert += 40;                              // king can't catch it
+
+            mg += sign * cert / 2;
+            eg += sign * cert;
+        }
+    }
+
+    return (mg * phase + eg * (24 - phase)) / 24;
+}
+
 void eval_default_strategy_weights(StrategyWeights *w) {
     for (int i = 0; i < STRAT_COUNT; i++) {
         w->weight[i] = 1.0f;
@@ -326,6 +424,10 @@ int eval_with_strategies(const Board *bd, const StrategyWeights *w) {
     // ATTACK_POTENTIAL
     if (w->enabled[STRAT_ATTACK_POTENTIAL])
         score += (int)(eval_attack_potential(bd, phase) * w->weight[STRAT_ATTACK_POTENTIAL]);
+
+    // DEFENDER_LOGISTICS — pawn blockage of own pieces vs promotion certainty
+    if (w->enabled[STRAT_DEFENDER_LOGISTICS])
+        score += (int)(eval_pawn_logistics(bd, phase) * w->weight[STRAT_DEFENDER_LOGISTICS]);
     
     return bd->side == WHITE ? score : -score;
 }
