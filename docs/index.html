@@ -216,17 +216,6 @@
         </div>
 
         <div class="section">
-            <h2>Across All Games</h2>
-            <div class="legend">
-                <span><i style="background:#4ECDC4"></i>game length (moves)</span>
-                <span><i style="background:#FF6B6B"></i>loss</span>
-                <span><i style="background:#ffaa00"></i>draw</span>
-                <span><i style="background:#00ff88"></i>win</span>
-            </div>
-            <canvas id="allGamesChart" width="1100" height="200" style="width:100%"></canvas>
-        </div>
-
-        <div class="section">
             <h2>Game Viewer — per-move piece &amp; square values</h2>
             <select id="gameSel"></select>
             <div class="viewer">
@@ -346,7 +335,7 @@
         async function fetchLiveMatches() {
             const rows = await fetchJSON(
                 `${SUPABASE_URL}/rest/v1/chessbb_games` +
-                `?select=our_color,result,moves,created_at&order=id.desc&limit=50`,
+                `?select=our_color,result,moves,created_at&uci=not.is.null&order=id.desc&limit=50`,
                 { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
             if (!rows || !rows.length) return null;
             return rows.reverse().map(r => ({
@@ -433,7 +422,7 @@
         async function fetchLiveGames() {
             const rows = await fetchJSON(
                 `${SUPABASE_URL}/rest/v1/chessbb_games` +
-                `?select=our_color,result,uci,created_at&uci=not.is.null&order=id.desc&limit=20`,
+                `?select=our_color,result,uci,created_at&uci=not.is.null&order=id.desc&limit=60`,
                 { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
             if (!rows) return null;
             return rows.map(buildLiveGame).filter(g => g.moves.length);
@@ -909,39 +898,65 @@
             }
         }
 
+        let viewerBound = false;
+        function gameKey(g) { return `${g.liveNow ? 'NOW' : ''}${g.date}|${g.result}|${g.white}|${g.black}`; }
+
         function initViewer(games) {
+            // Refreshes must NEVER yank the user back to game 0 / move 1:
+            // remember what they were looking at and restore it.
+            const prevKey = GAMES[curGame] ? gameKey(GAMES[curGame]) : null;
+            const prevPly = curPly;
+
             GAMES = games;
             const sel = document.getElementById('gameSel');
-            sel.innerHTML = games.map((g, i) =>
-                `<option value="${i}">${g.live ? '🔴 LIVE ' : ''}#${i + 1} · ${g.white} vs ${g.black} · ${g.result} · ${g.moves.length} plies · ${g.date}</option>`).join('');
             if (!games.length) {
-                sel.innerHTML = '<option>No games exported yet</option>';
+                sel.innerHTML = '<option>No games yet</option>';
                 renderBoard(START_FEN);
                 return;
             }
-            sel.onchange = () => selectGame(+sel.value);
-            document.getElementById('btnStart').onclick = () => setPly(-1);
-            document.getElementById('btnPrev').onclick = () => setPly(curPly - 1);
-            document.getElementById('btnNext').onclick = () => setPly(curPly + 1);
-            document.getElementById('btnEnd').onclick = () =>
-                setPly(GAMES[curGame].moves.length - 1);
-            document.querySelectorAll('#viewTabs .tab').forEach(btn => btn.onclick = () => {
-                viewMode = btn.dataset.mode;
-                document.querySelectorAll('#viewTabs .tab').forEach(b =>
-                    b.classList.toggle('sel', b === btn));
-                document.getElementById('sqPiece').style.display =
-                    viewMode === 'squares' ? '' : 'none';
-                setPly(curPly);
-            });
-            document.getElementById('sqPiece').onchange = e => {
-                sqPiece = e.target.value;
-                setPly(curPly);
-            };
-            document.addEventListener('keydown', e => {
-                if (e.key === 'ArrowLeft') setPly(curPly - 1);
-                if (e.key === 'ArrowRight') setPly(curPly + 1);
-            });
-            selectGame(0);
+
+            if (!viewerBound) {
+                viewerBound = true;
+                sel.onchange = () => selectGame(+sel.value);
+                document.getElementById('btnStart').onclick = () => setPly(-1);
+                document.getElementById('btnPrev').onclick = () => setPly(curPly - 1);
+                document.getElementById('btnNext').onclick = () => setPly(curPly + 1);
+                document.getElementById('btnEnd').onclick = () =>
+                    setPly(GAMES[curGame].moves.length - 1);
+                document.querySelectorAll('#viewTabs .tab').forEach(btn => btn.onclick = () => {
+                    viewMode = btn.dataset.mode;
+                    document.querySelectorAll('#viewTabs .tab').forEach(b =>
+                        b.classList.toggle('sel', b === btn));
+                    document.getElementById('sqPiece').style.display =
+                        viewMode === 'squares' ? '' : 'none';
+                    setPly(curPly);
+                });
+                document.getElementById('sqPiece').onchange = e => {
+                    sqPiece = e.target.value;
+                    setPly(curPly);
+                };
+                document.addEventListener('keydown', e => {
+                    if (e.key === 'ArrowLeft') setPly(curPly - 1);
+                    if (e.key === 'ArrowRight') setPly(curPly + 1);
+                });
+            }
+
+            let idx = prevKey ? GAMES.findIndex(g => gameKey(g) === prevKey) : -1;
+            const restoring = idx >= 0;
+            if (idx < 0) idx = 0;
+            curGame = idx;
+            rebuildGameSel();
+            if (restoring) {
+                // same game: leave board and move list exactly where they were
+                selectGame(idx);
+                setPly(Math.min(prevPly, GAMES[idx].moves.length - 1));
+            } else if (prevKey === null) {
+                selectGame(0);        // first load only
+            } else {
+                // previously-viewed game vanished from the window: keep index 0
+                // available but do not steal the user's scroll position
+                selectGame(0);
+            }
         }
 
         function selectGame(i) {
@@ -1019,8 +1034,10 @@
 
             document.querySelectorAll('#moveList .mv').forEach(el =>
                 el.classList.toggle('sel', +el.dataset.ply === curPly));
-            const sel = document.querySelector('#moveList .mv.sel');
-            if (sel) sel.scrollIntoView({ block: 'nearest' });
+            const selEl = document.querySelector('#moveList .mv.sel');
+            const list = document.getElementById('moveList');
+            if (selEl && list)
+                list.scrollTop = selEl.offsetTop - list.clientHeight / 2;
         }
 
         // ---- current game: per-move live stream ----
@@ -1087,35 +1104,6 @@
             }
         }
 
-        async function drawAllGames() {
-            const rows = await fetchJSON(
-                `${SUPABASE_URL}/rest/v1/chessbb_games?select=moves,outcome&order=id.asc&limit=1000`,
-                { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
-            if (!rows || rows.length < 2) return;
-            const canvas = document.getElementById('allGamesChart');
-            const ctx = canvas.getContext('2d');
-            const W = canvas.width, H = canvas.height, pad = 30;
-            ctx.clearRect(0, 0, W, H);
-            const maxM = Math.max(...rows.map(r => r.moves || 0), 10);
-            const x = i => pad + i * (W - 2 * pad) / (rows.length - 1);
-            const y = m => H - pad - (m / maxM) * (H - 2 * pad);
-            ctx.strokeStyle = '#4ECDC4'; ctx.lineWidth = 1.5;
-            ctx.beginPath();
-            rows.forEach((r, i) => i === 0 ? ctx.moveTo(x(i), y(r.moves || 0)) : ctx.lineTo(x(i), y(r.moves || 0)));
-            ctx.stroke();
-            rows.forEach((r, i) => {
-                ctx.fillStyle = r.outcome === 'win' ? '#00ff88'
-                              : r.outcome === 'draw' ? '#ffaa00' : '#FF6B6B';
-                ctx.beginPath();
-                ctx.arc(x(i), y(r.moves || 0), 2.2, 0, 7);
-                ctx.fill();
-            });
-            ctx.fillStyle = '#b0b0b0'; ctx.font = '12px sans-serif';
-            ctx.fillText('game 1', pad, H - 8);
-            ctx.fillText('game ' + rows.length, W - pad - 55, H - 8);
-            ctx.fillText(maxM + ' moves', 4, pad);
-        }
-
         document.getElementById('btnWatchLive').onclick = () => {
             if (!LIVE_ROW || !LIVE_ROW.uci) return;
             followLive = true;
@@ -1126,8 +1114,7 @@
         setInterval(pollLive, 3000);
         loadData();
         pollLive();
-        drawAllGames();
-        setInterval(drawAllGames, 60000);
+
     </script>
 </body>
 </html>
