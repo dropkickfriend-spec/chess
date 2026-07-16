@@ -2,3 +2,4 @@ chess
 *.o
 strategy_weights.txt
 tools/__pycache__/
+data/learned_values.txt.new
