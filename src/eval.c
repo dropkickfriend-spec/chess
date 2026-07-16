@@ -126,6 +126,12 @@ int PLAN_IDLE = 4;
 // gain this percent of activity in the weight budget (learned, one knob).
 int PLAN_ENGAGE = 50;
 
+// Certainty pricing: learned piece values are allowed to stay inflated —
+// they are the piece's worth at FULL plan execution. Material realises
+// CERT_FLOOR percent of it when the plan is contested, scaling linearly
+// to 100 percent when deeper search finds no refutation (unstoppable).
+int CERT_FLOOR = 55;
+
 // Scalar terms are plain ints (uppercase kept from their #define past) so
 // the Texel tuner can adjust them through the registry below.
 int ISOLATED_MG  = -10;
@@ -158,7 +164,7 @@ const ParamBlock eval_params[] = {
     { "SHIELD_BONUS", &SHIELD_BONUS, 1 },
     { "coord_w", coord_w, 5 },
     { "PLAN_PART", &PLAN_PART, 1 }, { "PLAN_IDLE", &PLAN_IDLE, 1 },
-    { "PLAN_ENGAGE", &PLAN_ENGAGE, 1 },
+    { "PLAN_ENGAGE", &PLAN_ENGAGE, 1 }, { "CERT_FLOOR", &CERT_FLOOR, 1 },
 };
 const int eval_params_n = sizeof(eval_params) / sizeof(eval_params[0]);
 

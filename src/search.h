@@ -26,4 +26,9 @@ int search_best_move(Board *bd, int movetime_ms, int max_depth);
 // lookahead has happened (depth 1, tune mode, tooling).
 extern U64 plan_squares[2];
 
+// Plan-execution certainty 0..100: share of the previous depth's PV that
+// survived the deeper search. 100 = no refutation found (unstoppable so
+// far); 0 = plan churning or no lookahead yet.
+extern int plan_certainty;
+
 #endif

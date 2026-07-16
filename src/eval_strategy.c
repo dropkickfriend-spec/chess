@@ -502,7 +502,8 @@ const char *strategy_names[STRAT_COUNT] = {
 };
 
 extern U64 plan_squares[2];
-extern int PLAN_PART, PLAN_IDLE, PLAN_ENGAGE;
+extern int PLAN_PART, PLAN_IDLE, PLAN_ENGAGE, CERT_FLOOR;
+extern int plan_certainty;
 
 // Strategy: GAME_PLAN — lookahead determines current piece worth. The last
 // completed search depth's principal variation IS the game plan for this
@@ -658,6 +659,16 @@ static void gather_raw(const Board *bd, int *phase_out, int raw[STRAT_COUNT]) {
                + abs(raw[STRAT_ATTACK_POTENTIAL]);
     if (danger > 400) danger = 400;
     raw[STRAT_MATERIAL] = raw[STRAT_MATERIAL] * 400 / (400 + danger);
+
+    // Certainty pricing: learned values stay inflated as full-execution
+    // worth; material and plan premiums realise CERT_FLOOR percent of it
+    // in contested positions, 100 percent when the deepening search finds
+    // no refutation of its plan (plan_certainty from search.c; a fixed
+    // floor factor in tune/tooling where no lookahead exists).
+    int floor_ = CERT_FLOOR < 0 ? 0 : CERT_FLOOR > 100 ? 100 : CERT_FLOOR;
+    int realise = floor_ + (100 - floor_) * plan_certainty / 100;
+    raw[STRAT_MATERIAL]  = raw[STRAT_MATERIAL]  * realise / 100;
+    raw[STRAT_GAME_PLAN] = raw[STRAT_GAME_PLAN] * realise / 100;
 
     *phase_out = phase;
 }
