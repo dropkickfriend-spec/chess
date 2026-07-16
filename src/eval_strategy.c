@@ -700,7 +700,13 @@ static float weight_mean(const Board *bd, const StrategyWeights *w, int phase,
     // learned knob, not a per-strategy hand-set.
     U64 plan_all = plan_squares[WHITE] | plan_squares[BLACK];
     if (plan_all) {
-        float gain = 1.0f + (float)PLAN_ENGAGE / 100.0f;
+        // Certainty gates the plan's authority over the whole budget: a
+        // churning plan barely reweights the other strategies; a plan the
+        // deepening search cannot refute reallocates at full PLAN_ENGAGE.
+        // This closes the recursion — depth N's certainty re-prices raw
+        // scores AND redistributes every strategy weight at depth N+1.
+        float gain = 1.0f + (float)PLAN_ENGAGE / 100.0f
+                          * (float)plan_certainty / 100.0f;
         U64 kings = bd->bb[WK] | bd->bb[BK];
         U64 kzone = 0;
         if (bd->bb[WK]) kzone |= king_attacks[LSB(bd->bb[WK])];
