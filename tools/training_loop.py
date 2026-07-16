@@ -89,6 +89,11 @@ for it in range(1, ITERATIONS + 1):
                            stdout=out, stderr=err, env=BOOT_ENV, check=False)
         os.replace("data/learned_values.txt.new", "data/learned_values.txt")
 
+        # Refit the strategy calibration from all logged outcomes — the
+        # optimal pre-game weights, not the running average of nudges.
+        subprocess.run(["python3", "tools/fit_strategy_weights.py", "--apply"],
+                       env=BOOT_ENV, check=False)
+
 print(f"\ntraining done: {score}/{games_done} "
       f"({100 * score / max(games_done, 1):.0f}%) vs Stockfish skill 20",
       flush=True)
