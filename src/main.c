@@ -46,10 +46,14 @@ int main(int argc, char **argv) {
     init_slider_attacks();
     eval_init();
 
-    // Optional Texel-tuned weights (same binary, different personality)
+    // Texel-tuned square/piece values: relearned once from logged games,
+    // then reloaded on every startup. CHESS_WEIGHTS overrides the default.
     const char *wf = getenv("CHESS_WEIGHTS");
-    if (wf && *wf)
-        fprintf(stderr, "loaded %d weights from %s\n", eval_load_weights(wf), wf);
+    if (!wf || !*wf) wf = "learned_values.txt";
+    {
+        int n = eval_load_weights(wf);
+        if (n) fprintf(stderr, "loaded %d weights from %s\n", n, wf);
+    }
 
     if (argc >= 2 && strcmp(argv[1], "perft") == 0) {
         int depth = argc >= 3 ? atoi(argv[2]) : 5;

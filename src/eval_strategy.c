@@ -428,6 +428,11 @@ int eval_with_strategies(const Board *bd, const StrategyWeights *w) {
     // DEFENDER_LOGISTICS — pawn blockage of own pieces vs promotion certainty
     if (w->enabled[STRAT_DEFENDER_LOGISTICS])
         score += (int)(eval_pawn_logistics(bd, phase) * w->weight[STRAT_DEFENDER_LOGISTICS]);
-    
+
+    // No learned bonus may ever rival a mate: search scores mates ±32000,
+    // and this clamp keeps runaway multiplicative weights out of that window.
+    if (score >  16000) score =  16000;
+    if (score < -16000) score = -16000;
+
     return bd->side == WHITE ? score : -score;
 }

@@ -79,8 +79,18 @@ def main():
     out_path = sys.argv[1]
     extra_files = sys.argv[2:]
 
-    pgns = fetch_supabase_pgns()
-    print(f"supabase: {len(pgns)} games")
+    # DATASET_LOCAL_ONLY=1 skips Supabase entirely (old uploads have known-bad
+    # outcome labels); a failed fetch degrades to local files instead of dying.
+    if os.environ.get("DATASET_LOCAL_ONLY"):
+        pgns = []
+        print("supabase: skipped (DATASET_LOCAL_ONLY)")
+    else:
+        try:
+            pgns = fetch_supabase_pgns()
+        except Exception as e:
+            print(f"supabase fetch failed ({e}), using local files only")
+            pgns = []
+        print(f"supabase: {len(pgns)} games")
     for path in extra_files:
         with open(path) as f:
             chunks = f.read().split("\n\n[")
