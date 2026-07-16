@@ -2,10 +2,12 @@
 """Post-game analyzer: trace which strategies were active, adjust weights based on outcome.
 
 Usage:
-  python3 tools/analyze_game.py game.pgn engine_path weights.txt outcome [game_id]
+  python3 tools/analyze_game.py game.pgn engine_path weights.txt outcome [expected]
 
-  outcome: 1 (win), 0.5 (draw), 0 (loss)
-  game_id: optional Supabase game ID for tracking
+  outcome:  1 (win), 0.5 (draw), 0 (loss)
+  expected: prior expectation of scoring against this opponent (default 0.5;
+            use ~0.05 vs max-skill Stockfish so losses teach little and
+            draws/wins teach a lot)
   Adjusts weights.txt and uploads to Supabase if configured.
 """
 import sys
@@ -112,17 +114,43 @@ def save_weights(path, weights):
             w = weights.get(strat, 1.0)
             f.write(f"weight {idx} {w}\n")
 
-def adjust_weights(weights, strategy_log, outcome):
-    """Adjust weights based on game outcome."""
-    # If we won: increase weight of active strategies
-    # If we lost: decrease weight of active strategies
+def adjust_weights(weights, strategy_log, outcome, expected=0.5):
+    """Surprise-driven, zero-sum weight adjustment.
 
-    adjustment = 1.02 if outcome > 0.5 else 0.98
+    The old rule multiplied by 0.98 per MOVE of a lost game, so against an
+    opponent that always wins every weight compounded toward zero and the
+    eval degenerated to noise (observed: 20 straight losses drove MATERIAL
+    to 0.0000 and games got shorter as training progressed).
 
+    New rule:
+    - surprise = outcome - expected: a loss to max-skill Stockfish is
+      expected and teaches almost nothing; a draw or win is a shock.
+    - one bounded nudge per game, scaled by each strategy's share of moves.
+    - weights renormalise to mean 1.0 afterwards: learning redistributes
+      emphasis between strategies (only ratios matter to the engine's
+      relative reweighting), so collapse is impossible.
+    """
+    surprise = outcome - expected
+    total_moves = max(len(strategy_log), 1)
+
+    counts = {}
     for entry in strategy_log:
         for strat in entry["active_strategies"]:
-            if strat in weights:
-                weights[strat] *= adjustment
+            counts[strat] = counts.get(strat, 0) + 1
+
+    LR = 0.5
+    for strat, c in counts.items():
+        if strat in weights:
+            share = c / total_moves
+            weights[strat] *= 1.0 + LR * surprise * share
+
+    mean = sum(weights.values()) / max(len(weights), 1)
+    if mean > 1e-6:
+        for strat in weights:
+            weights[strat] /= mean
+
+    for strat in weights:
+        weights[strat] = min(max(weights[strat], 0.05), 20.0)
 
     return weights
 
@@ -153,12 +181,12 @@ def upload_weights_to_supabase(strategy_log, weights, game_id=None):
 
         supabase_insert(base_url.rstrip("/"), key, "strategy_weights", rows)
 
-        # Update current weights
-        for idx, strat in enumerate(STRATEGIES):
-            w = weights.get(strat, 1.0)
-            supabase_insert(base_url.rstrip("/"), key, "strategy_weights_current",
-                          [{"strategy_idx": idx, "strategy_name": strat, "weight": w}],
-                          return_repr=False)
+        # Update current weights (single upsert batch on the PK)
+        supabase_insert(base_url.rstrip("/"), key, "strategy_weights_current",
+                        [{"strategy_idx": idx, "strategy_name": strat,
+                          "weight": weights.get(strat, 1.0)}
+                         for idx, strat in enumerate(STRATEGIES)],
+                        upsert=True)
     except Exception as e:
         print(f"Supabase upload failed: {e}", file=sys.stderr)
 
@@ -168,7 +196,7 @@ def main():
         return
 
     pgn_path, engine_path, weights_path, outcome_str = sys.argv[1:5]
-    game_id = int(sys.argv[5]) if len(sys.argv) > 5 else None
+    expected = float(sys.argv[5]) if len(sys.argv) > 5 else 0.5
     outcome = float(outcome_str)
 
     # Read game
@@ -184,14 +212,14 @@ def main():
     # Load current weights
     weights = load_weights(weights_path)
 
-    # Adjust based on outcome
-    weights = adjust_weights(weights, strategy_log, outcome)
+    # Adjust based on outcome relative to expectation
+    weights = adjust_weights(weights, strategy_log, outcome, expected)
 
     # Save updated weights locally
     save_weights(weights_path, weights)
 
     # Upload to Supabase for tracking
-    upload_weights_to_supabase(strategy_log, weights, game_id)
+    upload_weights_to_supabase(strategy_log, weights)
 
     print(f"Updated weights: {len(strategy_log)} moves, outcome {outcome:.1f}")
     print("New weights:")

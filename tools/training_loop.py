@@ -59,9 +59,11 @@ for it in range(1, ITERATIONS + 1):
 
             with open("/tmp/train_one.pgn", "w") as one:
                 print(game, file=one)
+            # expected 0.05: losses to max-skill Stockfish are priced in and
+            # teach little; draws and wins are the surprises worth learning
             subprocess.run(
                 ["python3", "tools/analyze_game.py", "/tmp/train_one.pgn",
-                 "./chess", "strategy_weights.txt", str(outcome)],
+                 "./chess", "strategy_weights.txt", str(outcome), "0.05"],
                 check=False)
             print(f"game {games_done}: {result} as "
                   f"{'white' if we_white else 'black'} -> outcome {outcome}",

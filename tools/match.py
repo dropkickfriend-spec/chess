@@ -29,7 +29,10 @@ DEFAULT_STOCKFISH = (shutil.which("stockfish")
                      or "/usr/games/stockfish")
 
 
-def supabase_insert(base_url, key, table, rows, return_repr=False):
+def supabase_insert(base_url, key, table, rows, return_repr=False, upsert=False):
+    prefer = "return=representation" if return_repr else "return=minimal"
+    if upsert:
+        prefer += ",resolution=merge-duplicates"
     req = urllib.request.Request(
         f"{base_url}/rest/v1/{table}",
         data=json.dumps(rows).encode(),
@@ -37,7 +40,7 @@ def supabase_insert(base_url, key, table, rows, return_repr=False):
             "apikey": key,
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
-            "Prefer": "return=representation" if return_repr else "return=minimal",
+            "Prefer": prefer,
         },
         method="POST",
     )
