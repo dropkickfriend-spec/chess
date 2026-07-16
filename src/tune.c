@@ -83,13 +83,17 @@ void tune_run(const char *dataset_path) {
     }
     fprintf(stderr, "K = %.2f, initial E = %.6f\n", best_k, best_e);
 
-    // Coordinate descent, coarse steps first
+    // Coordinate descent, coarse steps first. A pass must cut E by a real
+    // margin to earn another one — float-dust "improvements" after the data
+    // is fully fitted otherwise keep the loop spinning forever — and each
+    // step size is capped outright as a backstop.
     static const int steps[] = { 8, 4, 2, 1 };
     for (unsigned si = 0; si < sizeof(steps) / sizeof(steps[0]); si++) {
         int step = steps[si];
         int improved = 1;
         int pass = 0;
-        while (improved) {
+        while (improved && pass < 30) {
+            double pass_start_e = best_e;
             improved = 0;
             pass++;
             for (int b = 0; b < eval_params_n; b++) {
@@ -106,6 +110,7 @@ void tune_run(const char *dataset_path) {
                 }
             }
             fprintf(stderr, "step %d pass %d: E = %.6f\n", step, pass, best_e);
+            if (pass_start_e - best_e < 1e-7) break;   // converged at this step
         }
     }
 
