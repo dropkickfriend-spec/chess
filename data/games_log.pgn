@@ -3488,3 +3488,43 @@
 
 1. e4 Nf6 2. e5 Ne4 3. d4 c5 4. f3 cxd4 5. fxe4 d6 6. Qxd4 Nc6 7. Qf2 dxe5 8. Nf3 e6 9. Nc3 a6 10. Bd3 Be7 11. Be3 O-O 12. Bb6 Qd7 13. a3 Bd8 14. Bc5 Be7 15. Bb6 Bd8 16. O-O-O Bxb6 17. Qxb6 Qe7 18. Na4 Nd4 19. Nxd4 Qg5+ 20. Kb1 exd4 21. Qxd4 Rd8 22. Qc3 e5 23. Nb6 Rb8 24. Nd5 b5 25. h4 Qxg2 26. Qxe5 Bg4 27. Rhg1 Qh3 28. Rdf1 f6 29. Nxf6+ Kh8 30. Rxg4 Rb7 31. Ne8 Qxf1+ 32. Bxf1 Rf7 33. Nxg7 Rxf1+ 34. Ka2 Ra1+ 35. Kxa1 Rd1+ 36. Ka2 Ra1+ 37. Kxa1 h5 38. Ne6+ Kh7 39. Qxh5# 1-0
 
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "1"]
+[White "chess-bb"]
+[Black "Stockfish (skill 20)"]
+[Result "0-1"]
+
+1. g3 e5 2. c3 d5 3. d4 e4 4. Nh3 Bd6 5. Ng5 Nf6 6. h3 h6 7. Nf3 exf3 8. Qd3 fxe2 9. Qxe2+ Be6 10. b4 O-O 11. Qb5 Qc8 12. Qd3 Bf5 13. Qd1 Re8+ 14. Be2 Bxh3 15. Nd2 Nc6 16. Rxh3 Qxh3 17. Nf1 Ne4 18. Bb2 Qg2 19. Qc2 Qxf2+ 20. Kd1 Qg1 21. g4 Ng3 22. Bb5 Nxf1 23. Qa4 Qf2 24. Be2 Rxe2 25. Kc1 Bf4+ 26. Kd1 Re1# 0-1
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "2"]
+[White "Stockfish (skill 20)"]
+[Black "chess-bb"]
+[Result "1-0"]
+
+1. e4 d5 2. exd5 c6 3. dxc6 Nxc6 4. Nc3 e5 5. Nf3 Nf6 6. Bb5 Ng4 7. h3 Nxf2 8. Kxf2 Qd6 9. d4 e4 10. Nxe4 Qg6 11. Re1 Be7 12. Ne5 Qe6 13. Kg1 O-O 14. Bc4 Qf5 15. g4 Nxe5 16. gxf5 Nxc4 17. Qf3 Bh4 18. Re2 Bd8 19. f6 Bb6 20. c3 Re8 21. Qg3 g6 22. Qf4 Bxh3 23. Qh6 Bxd4+ 24. cxd4 Kh8 25. Qg7# 1-0
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "1"]
+[White "chess-bb"]
+[Black "Stockfish (skill 20)"]
+[Result "0-1"]
+
+1. d4 Nf6 2. c4 e6 3. Nf3 d5 4. e3 c5 5. Nc3 a6 6. g3 dxc4 7. Bxc4 b5 8. Bb3 Bb7 9. O-O Nbd7 10. e4 Qb6 11. d5 c4 12. dxe6 fxe6 13. Be3 Bc5 14. Bxc4 bxc4 15. Na4 Qc6 16. Ng5 Bxe3 17. fxe3 O-O 18. Rf2 h6 19. Nh3 Nxe4 20. Rxf8+ Rxf8 21. Nf4 Ng5 22. e4 Qxe4 23. Qxd7 Nh3+ 24. Kf1 Nxf4 25. Qf7+ Rxf7 26. gxf4 Rxf4+ 27. Kg1 Qh1# 0-1
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "2"]
+[White "Stockfish (skill 20)"]
+[Black "chess-bb"]
+[Result "1-0"]
+
+1. e4 d5 2. exd5 Qxd5 3. Nf3 c5 4. Nc3 Qd8 5. d4 Nc6 6. d5 Na5 7. Bb5+ Bd7 8. Qe2 Nf6 9. Bxd7+ Nxd7 10. Bf4 Qb6 11. Nb5 O-O-O 12. Bc7 Qa6 13. Bxd8 Kxd8 14. Rd1 Qb6 15. d6 f6 16. dxe7+ Bxe7 17. O-O c4 18. Nc3 Bf8 19. Nd5 Qxb2 20. Qe6 Qb5 21. Rfe1 Ba3 22. Nxf6 gxf6 23. Qxf6+ Kc7 24. Qxh8 Bc5 25. Qxh7 Kc8 26. h4 c3 27. Ng5 Nf8 28. Qf5+ Kc7 29. Ne4 Ne6 30. Nxc3 Bxf2+ 31. Qxf2 Qh5 32. Qg3+ Kc8 33. Qg8+ Kc7 34. Qxe6 Qc5+ 35. Kh2 a6 36. Na4 Qb4 37. Qe5+ Kc6 38. Qe8+ Kc7 39. Qd8+ Kc6 40. Qd7# 1-0
+
