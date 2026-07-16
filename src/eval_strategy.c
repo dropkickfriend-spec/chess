@@ -502,7 +502,7 @@ const char *strategy_names[STRAT_COUNT] = {
 };
 
 extern U64 plan_squares[2];
-extern int PLAN_PART, PLAN_IDLE;
+extern int PLAN_PART, PLAN_IDLE, PLAN_ENGAGE;
 
 // Strategy: GAME_PLAN — lookahead determines current piece worth. The last
 // completed search depth's principal variation IS the game plan for this
@@ -662,7 +662,7 @@ static void gather_raw(const Board *bd, int *phase_out, int raw[STRAT_COUNT]) {
     *phase_out = phase;
 }
 
-static float weight_mean(const StrategyWeights *w, int phase,
+static float weight_mean(const Board *bd, const StrategyWeights *w, int phase,
                          float eff_out[STRAT_COUNT]) {
     // Per-move activity: how much of each strategy participates right now.
     // Phase-tapered terms only claim their share of the weight budget.
@@ -681,6 +681,40 @@ static float weight_mean(const StrategyWeights *w, int phase,
     act[STRAT_KING_ACTIVITY]       = pe;
     act[STRAT_OPPOSITION]          = pe;
     act[STRAT_PAWN_PROMOTION]      = pe;
+
+    // Lookahead engages the "things" weights too: the plan's measurable
+    // character (which squares/men the PV fights over) raises the activity
+    // of the strategies executing it, and the shared budget automatically
+    // dilutes the bystanders. The gain (PLAN_ENGAGE percent) is a single
+    // learned knob, not a per-strategy hand-set.
+    U64 plan_all = plan_squares[WHITE] | plan_squares[BLACK];
+    if (plan_all) {
+        float gain = 1.0f + (float)PLAN_ENGAGE / 100.0f;
+        U64 kings = bd->bb[WK] | bd->bb[BK];
+        U64 kzone = 0;
+        if (bd->bb[WK]) kzone |= king_attacks[LSB(bd->bb[WK])];
+        if (bd->bb[BK]) kzone |= king_attacks[LSB(bd->bb[BK])];
+
+        // Plan converges on a king: attack/safety are the executing things
+        if (plan_all & (kings | kzone)) {
+            act[STRAT_ATTACK_POTENTIAL]    *= gain;
+            act[STRAT_KING_SAFETY_OPENING] *= gain;
+            act[STRAT_KING_ACTIVITY]       *= gain;
+        }
+        // Plan moves pawns: structure, promotion, and the logistics they gate
+        if (plan_all & (bd->bb[WP] | bd->bb[BP])) {
+            act[STRAT_PAWN_STRUCTURE]     *= gain;
+            act[STRAT_PAWN_PROMOTION]     *= gain;
+            act[STRAT_DEFENDER_LOGISTICS] *= gain;
+        }
+        // Plan fights over the centre
+        const U64 CENTER = (1ULL<<27)|(1ULL<<28)|(1ULL<<35)|(1ULL<<36);
+        if (plan_all & CENTER)
+            act[STRAT_CENTER_CONTROL] *= gain;
+        // Broad plan using many squares: cooperation is doing the work
+        if (COUNT(plan_all) >= 10)
+            act[STRAT_COORDINATION] *= gain;
+    }
 
     float wsum = 0.0f, asum = 0.0f;
     for (int i = 0; i < STRAT_COUNT; i++)
@@ -706,7 +740,7 @@ int eval_with_strategies(const Board *bd, const StrategyWeights *w) {
     float eff[STRAT_COUNT];
 
     gather_raw(bd, &phase, raw);
-    weight_mean(w, phase, eff);
+    weight_mean(bd, w, phase, eff);
 
     float total = 0.0f;
     for (int i = 0; i < STRAT_COUNT; i++)
@@ -728,7 +762,7 @@ int eval_explain(const Board *bd, const StrategyWeights *w,
                  int raw_out[STRAT_COUNT], float eff_out[STRAT_COUNT]) {
     int phase;
     gather_raw(bd, &phase, raw_out);
-    weight_mean(w, phase, eff_out);
+    weight_mean(bd, w, phase, eff_out);
 
     float total = 0.0f;
     for (int i = 0; i < STRAT_COUNT; i++)

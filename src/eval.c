@@ -122,6 +122,10 @@ int coord_w[5] = { 4, 4, 4, 4, 4 };
 int PLAN_PART = 8;
 int PLAN_IDLE = 4;
 
+// Lookahead engages strategies too: strategies executing the current plan
+// gain this percent of activity in the weight budget (learned, one knob).
+int PLAN_ENGAGE = 50;
+
 // Scalar terms are plain ints (uppercase kept from their #define past) so
 // the Texel tuner can adjust them through the registry below.
 int ISOLATED_MG  = -10;
@@ -154,6 +158,7 @@ const ParamBlock eval_params[] = {
     { "SHIELD_BONUS", &SHIELD_BONUS, 1 },
     { "coord_w", coord_w, 5 },
     { "PLAN_PART", &PLAN_PART, 1 }, { "PLAN_IDLE", &PLAN_IDLE, 1 },
+    { "PLAN_ENGAGE", &PLAN_ENGAGE, 1 },
 };
 const int eval_params_n = sizeof(eval_params) / sizeof(eval_params[0]);
 
