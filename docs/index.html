@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>chess-bb: Self-Learning Chess Engine Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            background: linear-gradient(45deg, #00d4ff, #0099ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .section {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+        }
+        h2 {
+            color: #00d4ff;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid rgba(0, 212, 255, 0.5);
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #00d4ff;
+        }
+        .stat-label {
+            color: #b0b0b0;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        .strategy-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+        .strategy-card {
+            background: rgba(0, 100, 150, 0.2);
+            border-left: 4px solid #00d4ff;
+            padding: 12px;
+            border-radius: 4px;
+        }
+        .strategy-name {
+            font-weight: bold;
+            color: #00d4ff;
+            font-size: 0.9em;
+        }
+        .strategy-value {
+            color: #ffffff;
+            font-size: 1.3em;
+            margin-top: 5px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: rgba(0, 212, 255, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00d4ff, #0099ff);
+            width: 50%;
+            border-radius: 4px;
+        }
+        .match-history {
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+        }
+        th {
+            background: rgba(0, 212, 255, 0.1);
+            color: #00d4ff;
+            font-weight: bold;
+        }
+        tr:hover {
+            background: rgba(0, 212, 255, 0.05);
+        }
+        .win { color: #00ff00; }
+        .loss { color: #ff4444; }
+        .draw { color: #ffaa00; }
+        .footer {
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(0, 212, 255, 0.2);
+        }
+        canvas {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>♟️ chess-bb: Self-Learning Chess Engine</h1>
+
+        <div class="section">
+            <h2>Match Performance vs Stockfish</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="wins">0</div>
+                    <div class="stat-label">Wins</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="draws">0</div>
+                    <div class="stat-label">Draws</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="losses">0</div>
+                    <div class="stat-label">Losses</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="score">0%</div>
+                    <div class="stat-label">Score</div>
+                </div>
+            </div>
+            <canvas id="matchChart" style="max-width: 100%; height: 300px;"></canvas>
+        </div>
+
+        <div class="section">
+            <h2>Strategy Weights (Self-Tuning)</h2>
+            <div class="strategy-grid" id="weightsContainer">
+                <!-- Dynamically populated -->
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Recent Matches</h2>
+            <div class="match-history">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Match</th>
+                            <th>Color</th>
+                            <th>Result</th>
+                            <th>Moves</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody id="matchTable">
+                        <!-- Dynamically populated -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Architecture</h2>
+            <p style="line-height: 1.6; margin-bottom: 10px;">
+                <strong>chess-bb</strong> is a bitboard-based UCI chess engine with a self-tuning evaluation function.
+                Key features:
+            </p>
+            <ul style="margin-left: 20px; line-height: 1.8;">
+                <li><strong>Strategy-Based Evaluation:</strong> 11 independent evaluation strategies covering opening, middlegame, and endgame phases</li>
+                <li><strong>Self-Learning:</strong> After each game, strategy weights adjust based on outcome (1.02× for wins, 0.98× for losses)</li>
+                <li><strong>Tapered Scoring:</strong> Midgame/endgame blend based on remaining material (smooth king transition)</li>
+                <li><strong>Alpha-Beta Search:</strong> Transposition table, null-move pruning, late-move reduction, history heuristic</li>
+                <li><strong>Weight Persistence:</strong> Learned weights saved to disk and loaded on engine startup</li>
+            </ul>
+        </div>
+
+        <div class="footer">
+            <p>Live dashboard for chess-bb self-play experiments. Data updates automatically from game results and weight files.</p>
+            <p style="margin-top: 10px; color: #444;">Last updated: <span id="timestamp">--</span></p>
+        </div>
+    </div>
+
+    <script>
+        const STRATEGY_NAMES = [
+            "DEVELOPMENT",
+            "CENTER_CONTROL",
+            "KING_SAFETY_OPENING",
+            "PIECE_ACTIVITY",
+            "ATTACK_POTENTIAL",
+            "PAWN_STRUCTURE",
+            "DEFENDER_LOGISTICS",
+            "KING_ACTIVITY",
+            "PAWN_PROMOTION",
+            "OPPOSITION",
+            "MATERIAL"
+        ];
+
+        const STRATEGY_COLORS = [
+            "#FF6B6B", "#4ECDC4", "#45B7D1",
+            "#FFA07A", "#98D8C8", "#F7DC6F",
+            "#BB8FCE", "#85C1E2", "#F8B739",
+            "#52C9A3", "#FF6B9D"
+        ];
+
+        // Load data from JSON files (served by GitHub Pages)
+        async function loadData() {
+            try {
+                // Try to load match history
+                const matchResponse = await fetch('data/matches.json');
+                const matches = matchResponse.ok ? await matchResponse.json() : [];
+
+                // Try to load strategy weights
+                const weightsResponse = await fetch('data/weights.json');
+                const weights = weightsResponse.ok ? await weightsResponse.json() : {};
+
+                updateDashboard(matches, weights);
+            } catch (error) {
+                console.log("Data files not available yet. Dashboard will update when games complete.");
+                showPlaceholder();
+            }
+        }
+
+        function updateDashboard(matches, weights) {
+            updateStats(matches);
+            updateWeights(weights);
+            updateMatchTable(matches);
+            updateTimestamp();
+        }
+
+        function updateStats(matches) {
+            let wins = 0, draws = 0, losses = 0;
+
+            matches.forEach(m => {
+                if (m.result === "1-0") wins += m.our_color === "white" ? 1 : 0;
+                else if (m.result === "0-1") losses += m.our_color === "white" ? 1 : 0;
+                else if (m.result === "1/2-1/2") draws++;
+            });
+
+            const total = wins + draws + losses;
+            const score = total > 0 ? ((wins + draws / 2) / total * 100).toFixed(1) : 0;
+
+            document.getElementById('wins').textContent = wins;
+            document.getElementById('draws').textContent = draws;
+            document.getElementById('losses').textContent = losses;
+            document.getElementById('score').textContent = score + '%';
+        }
+
+        function updateWeights(weights) {
+            const container = document.getElementById('weightsContainer');
+            container.innerHTML = '';
+
+            STRATEGY_NAMES.forEach((name, i) => {
+                const value = weights[i] || 1.0;
+                const normalized = Math.min(value / 2, 1); // Cap visual at 2.0 for display
+
+                const card = document.createElement('div');
+                card.className = 'strategy-card';
+                card.innerHTML = `
+                    <div class="strategy-name">${name}</div>
+                    <div class="strategy-value">${value.toFixed(3)}</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${normalized * 100}%"></div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function updateMatchTable(matches) {
+            const tbody = document.getElementById('matchTable');
+            tbody.innerHTML = '';
+
+            const recent = matches.slice(-10).reverse();
+            recent.forEach((match, i) => {
+                const resultClass = match.result === "1-0" ? (match.our_color === "white" ? "win" : "loss") :
+                                   match.result === "0-1" ? (match.our_color === "black" ? "win" : "loss") :
+                                   "draw";
+                const resultText = match.result === "1/2-1/2" ? "Draw" : match.result;
+
+                const row = `
+                    <tr>
+                        <td>Match ${matches.length - i}</td>
+                        <td>${match.our_color.charAt(0).toUpperCase() + match.our_color.slice(1)}</td>
+                        <td class="${resultClass}">${resultText}</td>
+                        <td>${match.moves}</td>
+                        <td>${match.date || '--'}</td>
+                    </tr>
+                `;
+                tbody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+
+        function updateTimestamp() {
+            document.getElementById('timestamp').textContent = new Date().toLocaleString();
+        }
+
+        function showPlaceholder() {
+            // Show demo data while waiting for real data
+            const demoMatches = [
+                { result: "0-1", our_color: "white", moves: 42, date: "2026-07-16" },
+                { result: "1/2-1/2", our_color: "black", moves: 58, date: "2026-07-15" }
+            ];
+            const demoWeights = [1.0, 1.0, 1.8, 0.9, 1.0, 0.9, 1.0, 1.0, 0.42, 1.0, 0.685];
+            updateDashboard(demoMatches, demoWeights);
+        }
+
+        // Auto-refresh every 30 seconds
+        setInterval(loadData, 30000);
+
+        // Initial load
+        loadData();
+    </script>
+</body>
+</html>
