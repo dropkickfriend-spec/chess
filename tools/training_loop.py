@@ -75,6 +75,11 @@ for it in range(1, ITERATIONS + 1):
                   f"{'white' if we_white else 'black'} -> outcome {outcome}",
                   flush=True)
 
+    # Bleed metric: cp lost per move by Stockfish's judgement — the metric
+    # that shows learning long before the first earned draw.
+    subprocess.run(["python3", "tools/bleed_metric.py", "/tmp/train_pair.pgn",
+                    "10"], check=False)
+
     if games_done and games_done % RETUNE_EVERY == 0:
         print(f"--- retuning square/piece values on {games_done} new games ---",
               flush=True)

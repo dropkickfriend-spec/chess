@@ -71,9 +71,40 @@ static void dump_params(void) {
     fflush(stdout);
 }
 
+// Curriculum: only fit what the data can feed. Every parameter wants ~30
+// positions behind it; blocks join in priority order — coarse, global
+// quantities first, the 64-square tables last — so a small game log tunes
+// material and scalars instead of memorising itself into 512 PST cells.
+static const char *stage_priority[] = {
+    "material_mg+1", "material_eg",
+    "ISOLATED_MG", "ISOLATED_EG", "DOUBLED_MG", "DOUBLED_EG",
+    "BISHOP_PAIR_MG", "BISHOP_PAIR_EG", "ROOK_OPEN", "ROOK_SEMIOPEN",
+    "SHIELD_BONUS",
+    "coord_w", "PLAN_PART", "PLAN_IDLE", "PLAN_ENGAGE",
+    "passed_mg+1", "passed_eg+1",
+    "pawn_eg", "king_eg",
+    "pst_mg[0]", "pst_mg[5]", "pst_mg[1]", "pst_mg[2]", "pst_mg[3]", "pst_mg[4]",
+};
+
 void tune_run(const char *dataset_path) {
     if (!load_dataset(dataset_path)) return;
     fprintf(stderr, "loaded %d positions\n", n_samples);
+
+    static int tunable[64];
+    memset(tunable, 0, sizeof(tunable));
+    int budget = n_samples / 30, used = 0, total = 0;
+    for (int b = 0; b < eval_params_n; b++) total += eval_params[b].count;
+    for (unsigned p = 0; p < sizeof(stage_priority) / sizeof(*stage_priority); p++) {
+        for (int b = 0; b < eval_params_n; b++) {
+            if (strcmp(eval_params[b].name, stage_priority[p]) != 0) continue;
+            if (used == 0 || used + eval_params[b].count <= budget) {
+                tunable[b] = 1;
+                used += eval_params[b].count;
+            }
+        }
+    }
+    fprintf(stderr, "stage: tuning %d of %d params (budget %d positions/30)\n",
+            used, total, budget);
 
     // Fit the sigmoid scale K on the untouched eval
     double best_k = 0.5, best_e = error_fn(0.5);
@@ -98,6 +129,7 @@ void tune_run(const char *dataset_path) {
             pass++;
             for (int b = 0; b < eval_params_n; b++) {
                 const ParamBlock *pb = &eval_params[b];
+                if (!tunable[b]) continue;    // outside this stage's budget
                 for (int i = 0; i < pb->count; i++) {
                     int orig = pb->ptr[i];
                     pb->ptr[i] = orig + step;
