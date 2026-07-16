@@ -332,14 +332,27 @@ static int eval_pawn_logistics(const Board *bd, int phase) {
             eg -= sign * crowded;
         }
 
-        // Counter-weight: a pawn that cramps its own pieces may still be
-        // right to push when its promotion certainty rises. Credit passed
-        // pawns quadratically by rank, doubled with a clear path, plus a
-        // rule-of-square bonus when the defending king can't catch it —
-        // so the same weight balances blockage cost against promotion gain.
-        int foe = side == WHITE ? BP : WP;
+    }
+
+    return (mg * phase + eg * (24 - phase)) / 24;
+}
+
+// Strategy: PAWN_PROMOTION — promotion certainty of each passed pawn:
+// quadratic by rank, doubled with a clear path, plus a rule-of-square
+// bonus when the defending king can't catch it. Split out of logistics
+// so the per-move reweighting balances "this push cramps my pieces"
+// against "this push gets closer to queening" through relative weights.
+static int eval_pawn_promotion(const Board *bd, int phase) {
+    int mg = 0, eg = 0;
+    U64 occ = bd->occ[BOTH];
+
+    for (int side = WHITE; side <= BLACK; side++) {
+        int sign = side == WHITE ? 1 : -1;
+        int base = side == WHITE ? WP : BP;
+        int foe  = side == WHITE ? BP : WP;
         U64 their_pawns = bd->bb[foe];
-        bb = own_pawns;
+
+        U64 bb = bd->bb[base];
         while (bb) {
             int sq = LSB(bb); POP_BIT(bb, sq);
             if (passed_mask[side][sq] & their_pawns) continue;  // not passed
@@ -469,50 +482,67 @@ int eval_save_strategy_weights(const char *path, const StrategyWeights *w) {
     return 1;
 }
 
-// Main strategy-based evaluation
+// Main strategy-based evaluation.
+//
+// Strategies compete for a fixed evaluation budget: every weight is divided
+// by the phase-weighted mean of all enabled weights on this move, so only
+// ratios matter — raising PAWN_PROMOTION (or KING_SAFETY) automatically
+// dilutes MATERIAL and everything else on that same move, and uniformly
+// inflating all weights changes nothing.
 int eval_with_strategies(const Board *bd, const StrategyWeights *w) {
     int phase;
-    int score = 0;
+    int raw[STRAT_COUNT];
 
-    // MATERIAL — always evaluate to get phase, but only add score if enabled
-    int material_score = eval_material(bd, &phase);
-    if (w->enabled[STRAT_MATERIAL])
-        score += (int)(material_score * w->weight[STRAT_MATERIAL]);
-    
-    // PAWN_STRUCTURE
-    if (w->enabled[STRAT_PAWN_STRUCTURE])
-        score += (int)(eval_pawn_structure(bd, phase) * w->weight[STRAT_PAWN_STRUCTURE]);
-    
-    // PIECE_ACTIVITY
-    if (w->enabled[STRAT_PIECE_ACTIVITY])
-        score += (int)(eval_piece_activity(bd, phase) * w->weight[STRAT_PIECE_ACTIVITY]);
-    
-    // KING_SAFETY (opening/middlegame)
-    if (w->enabled[STRAT_KING_SAFETY_OPENING] && eval_detect_phase(bd) <= PHASE_MIDDLEGAME)
-        score += (int)(eval_king_safety(bd, phase) * w->weight[STRAT_KING_SAFETY_OPENING]);
-    
-    // ATTACK_POTENTIAL
-    if (w->enabled[STRAT_ATTACK_POTENTIAL])
-        score += (int)(eval_attack_potential(bd, phase) * w->weight[STRAT_ATTACK_POTENTIAL]);
+    raw[STRAT_MATERIAL]            = eval_material(bd, &phase);
+    raw[STRAT_PAWN_STRUCTURE]      = eval_pawn_structure(bd, phase);
+    raw[STRAT_PIECE_ACTIVITY]      = eval_piece_activity(bd, phase);
+    raw[STRAT_KING_SAFETY_OPENING] = eval_king_safety(bd, phase);
+    raw[STRAT_ATTACK_POTENTIAL]    = eval_attack_potential(bd, phase);
+    raw[STRAT_DEFENDER_LOGISTICS]  = eval_pawn_logistics(bd, phase);
+    raw[STRAT_DEVELOPMENT]         = eval_development(bd, phase);
+    raw[STRAT_CENTER_CONTROL]      = eval_center_control(bd, phase);
+    raw[STRAT_KING_ACTIVITY]       = eval_king_activity(bd, phase);
+    raw[STRAT_OPPOSITION]          = eval_opposition(bd, phase);
+    raw[STRAT_PAWN_PROMOTION]      = eval_pawn_promotion(bd, phase);
 
-    // DEFENDER_LOGISTICS — pawn blockage of own pieces vs promotion certainty
-    if (w->enabled[STRAT_DEFENDER_LOGISTICS])
-        score += (int)(eval_pawn_logistics(bd, phase) * w->weight[STRAT_DEFENDER_LOGISTICS]);
+    // A queen is worth less when someone is getting mated — yours if the
+    // attack is on you, theirs if you can throw it at their king. Material's
+    // say shrinks as king danger (either side's, either sign) grows.
+    int danger = abs(raw[STRAT_KING_SAFETY_OPENING])
+               + abs(raw[STRAT_ATTACK_POTENTIAL]);
+    if (danger > 400) danger = 400;
+    raw[STRAT_MATERIAL] = raw[STRAT_MATERIAL] * 400 / (400 + danger);
 
-    // DEVELOPMENT + CENTER_CONTROL (opening-tapered)
-    if (w->enabled[STRAT_DEVELOPMENT])
-        score += (int)(eval_development(bd, phase) * w->weight[STRAT_DEVELOPMENT]);
-    if (w->enabled[STRAT_CENTER_CONTROL])
-        score += (int)(eval_center_control(bd, phase) * w->weight[STRAT_CENTER_CONTROL]);
+    // Per-move activity: how much of each strategy participates right now.
+    // Phase-tapered terms only claim their share of the weight budget.
+    float po = (float)phase / 24.0f, pe = 1.0f - po;
+    float act[STRAT_COUNT];
+    act[STRAT_MATERIAL]            = 1.0f;
+    act[STRAT_PAWN_STRUCTURE]      = 1.0f;
+    act[STRAT_PIECE_ACTIVITY]      = 1.0f;
+    act[STRAT_DEFENDER_LOGISTICS]  = 1.0f;
+    act[STRAT_KING_SAFETY_OPENING] = po;
+    act[STRAT_ATTACK_POTENTIAL]    = po;
+    act[STRAT_DEVELOPMENT]         = po;
+    act[STRAT_CENTER_CONTROL]      = po;
+    act[STRAT_KING_ACTIVITY]       = pe;
+    act[STRAT_OPPOSITION]          = pe;
+    act[STRAT_PAWN_PROMOTION]      = pe;
 
-    // KING_ACTIVITY + OPPOSITION (endgame-tapered)
-    if (w->enabled[STRAT_KING_ACTIVITY])
-        score += (int)(eval_king_activity(bd, phase) * w->weight[STRAT_KING_ACTIVITY]);
-    if (w->enabled[STRAT_OPPOSITION])
-        score += (int)(eval_opposition(bd, phase) * w->weight[STRAT_OPPOSITION]);
+    float wsum = 0.0f, asum = 0.0f;
+    for (int i = 0; i < STRAT_COUNT; i++)
+        if (w->enabled[i]) { wsum += w->weight[i] * act[i]; asum += act[i]; }
+    float wmean = asum > 0.001f ? wsum / asum : 1.0f;
+    if (wmean < 0.05f) wmean = 0.05f;   // degenerate weight files stay sane
+
+    float total = 0.0f;
+    for (int i = 0; i < STRAT_COUNT; i++)
+        if (w->enabled[i])
+            total += raw[i] * (w->weight[i] / wmean);
 
     // No learned bonus may ever rival a mate: search scores mates ±32000,
-    // and this clamp keeps runaway multiplicative weights out of that window.
+    // and this clamp keeps runaway relative weights out of that window.
+    int score = (int)total;
     if (score >  16000) score =  16000;
     if (score < -16000) score = -16000;
 
