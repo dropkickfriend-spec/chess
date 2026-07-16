@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Bleed metric: how fast chess-bb hemorrhages eval against Stockfish.
 
-Wins/losses can't measure progress while every game vs max Stockfish is a
-loss — but the RATE of loss can. For every chess-bb move we take Stockfish's
-eval (our POV, clamped to +/-800 so dead-lost noise doesn't dominate) before
-and after the move; the mean drop per move is the bleed, in cp/move.
-A learning engine bleeds slower over time.
+Reports TWO numbers per game and they mean different things:
+- trend-bleed: eval drop per move with evals clamped to +/-800. ONLY valid
+  for comparing runs against each other (the clamp stops dead-lost noise
+  drowning the trend, but it hides how bad collapses really are).
+- real ACPL: the same measurement UNCLAMPED - honest average centipawn
+  loss, comparable to what chess sites report. This is the true strength
+  number, and while the engine is young it is ugly. Never quote the
+  clamped number as playing strength.
 
 Appends one row per game to data/bleed_history.csv:
   timestamp,color,result,our_moves,bleed_cp_per_move
@@ -34,22 +37,25 @@ def game_bleed(game, sf, depth):
     """Mean cp lost per chess-bb move, Stockfish's judgement."""
     we_white = game.headers.get("White") == "chess-bb"
     board = game.board()
+    pov = chess.WHITE if we_white else chess.BLACK
     info = sf.analyse(board, chess.engine.Limit(depth=depth))
-    prev = clamp(info["score"].pov(chess.WHITE if we_white else chess.BLACK)
-                 .score(mate_score=10000))
-    deltas = []
+    prev_raw = info["score"].pov(pov).score(mate_score=10000)
+    prev = clamp(prev_raw)
+    deltas, raw = [], []
     for mv in game.mainline_moves():
-        ours = board.turn == (chess.WHITE if we_white else chess.BLACK)
+        ours = board.turn == pov
         board.push(mv)
         info = sf.analyse(board, chess.engine.Limit(depth=depth))
-        cur = clamp(info["score"].pov(chess.WHITE if we_white else chess.BLACK)
-                    .score(mate_score=10000))
+        cur_raw = info["score"].pov(pov).score(mate_score=10000)
+        cur = clamp(cur_raw)
         if ours:
             deltas.append(cur - prev)
+            raw.append(cur_raw - prev_raw)
         prev = cur
+        prev_raw = cur_raw
     if not deltas:
-        return None, 0
-    return -sum(deltas) / len(deltas), len(deltas)
+        return None, None, 0
+    return -sum(deltas) / len(deltas), -sum(raw) / len(raw), len(deltas)
 
 
 def main():
@@ -69,15 +75,15 @@ def main():
                 if "chess-bb" not in (game.headers.get("White", ""),
                                       game.headers.get("Black", "")):
                     continue
-                bleed, n = game_bleed(game, sf, depth)
+                bleed, acpl, n = game_bleed(game, sf, depth)
                 if bleed is None:
                     continue
                 color = "white" if game.headers.get("White") == "chess-bb" else "black"
                 rows.append((datetime.datetime.utcnow().isoformat(timespec="seconds"),
                              color, game.headers.get("Result", "*"), n,
-                             round(bleed, 1)))
+                             round(bleed, 1), round(acpl, 1)))
                 print(f"game as {color}: {game.headers.get('Result')} — "
-                      f"bleed {bleed:+.1f} cp/move over {n} moves")
+                      f"trend-bleed {bleed:+.1f} (clamped), REAL ACPL {acpl:+.1f} cp/move over {n} moves")
     finally:
         sf.quit()
 
@@ -85,7 +91,7 @@ def main():
         new = not os.path.exists(csv_path)
         with open(csv_path, "a") as f:
             if new:
-                f.write("timestamp,color,result,our_moves,bleed_cp_per_move\n")
+                f.write("timestamp,color,result,our_moves,bleed_cp_per_move,real_acpl\n")
             for r in rows:
                 f.write(",".join(map(str, r)) + "\n")
         avg = sum(r[4] for r in rows) / len(rows)

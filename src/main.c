@@ -11,6 +11,7 @@
 #include "perft.h"
 #include "eval.h"
 #include "eval_strategy.h"
+#include "search.h"
 #include "tune.h"
 #include "uci.h"
 
@@ -54,6 +55,16 @@ int main(int argc, char **argv) {
     {
         int n = eval_load_weights(wf);
         if (n) fprintf(stderr, "loaded %d weights from %s\n", n, wf);
+    }
+
+    // Route book: permanent cache of root-search verdicts. Enabled when the
+    // file exists or CHESS_BOOK names one explicitly; silent otherwise.
+    const char *bf = getenv("CHESS_BOOK");
+    {
+        int force = bf && *bf;
+        if (!force) bf = "route_book.txt";
+        int n = book_load(bf, force);
+        if (n) fprintf(stderr, "loaded %d book routes from %s\n", n, bf);
     }
 
     if (argc >= 2 && strcmp(argv[1], "perft") == 0) {

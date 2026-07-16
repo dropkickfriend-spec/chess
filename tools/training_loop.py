@@ -37,14 +37,15 @@ score = 0.0
 # piece values (zero human priors at the start), and each retune below
 # starts descent from those same values — so the tables it plays with are
 # the tables it worked out from its own games.
-BOOT_ENV = dict(os.environ, CHESS_WEIGHTS="data/learned_values.txt")
+BOOT_ENV = dict(os.environ, CHESS_WEIGHTS="data/learned_values.txt",
+                CHESS_BOOK="data/route_book.txt")
 
 for it in range(1, ITERATIONS + 1):
     print(f"=== training iteration {it}/{ITERATIONS} ===", flush=True)
     subprocess.run(
         ["python3", "tools/match.py", "--engine", "./chess",
          "--stockfish", SF, "--games", "2", "--movetime", MOVETIME,
-         "--skill", "20", "--pgn", "/tmp/train_pair.pgn"],
+         "--skill", "20", "--pgn", "/tmp/train_pair.pgn", "--upload"],
         env=BOOT_ENV, check=False)
 
     with open("/tmp/train_pair.pgn") as f:

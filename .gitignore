@@ -3,3 +3,4 @@ chess
 strategy_weights.txt
 tools/__pycache__/
 data/learned_values.txt.new
+route_book.txt

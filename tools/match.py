@@ -97,17 +97,52 @@ def upload_match(sf_skill, sf_elo, movetime, wins, draws, losses, games):
         "outcome": g["outcome"],
         "moves": g["moves"],
         "pgn": g["pgn"],
+        "uci": g.get("uci"),
+        "evals": g.get("evals"),
     } for g in games])
     print(f"uploaded match {match_id} ({len(games)} games) to Supabase")
 
 
-def play_game(white, black, movetime, max_plies=1000):
+def play_game(white, black, movetime, max_plies=1000, live_cb=None):
     board = chess.Board()
+    evals = []
     while not board.is_game_over(claim_draw=True) and board.ply() < max_plies:
         eng = white if board.turn == chess.WHITE else black
-        result = eng.play(board, chess.engine.Limit(time=movetime))
+        result = eng.play(board, chess.engine.Limit(time=movetime),
+                          info=chess.engine.INFO_SCORE)
         board.push(result.move)
-    return board
+        sc = result.info.get("score") if result.info else None
+        evals.append(sc.white().score(mate_score=10000) if sc else None)
+        if live_cb:
+            live_cb(board, evals)
+    return board, evals
+
+
+def make_live_cb(base_url, key, our_color):
+    """Stream the in-progress game to the live_game row after each move
+    (throttled to ~1/s) so dashboards update per move. Never lets a
+    network hiccup touch the game."""
+    import datetime as _dt
+    import time as _time
+    last = [0.0]
+
+    def cb(board, evals):
+        now = _time.time()
+        if now - last[0] < 1.0 and not board.is_game_over(claim_draw=True):
+            return
+        last[0] = now
+        try:
+            supabase_insert(base_url, key, "live_game", [{
+                "id": 1,
+                "our_color": our_color,
+                "uci": " ".join(m.uci() for m in board.move_stack),
+                "evals": json.dumps(evals),
+                "ply": board.ply(),
+                "updated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+            }], upsert=True)
+        except Exception:
+            pass
+    return cb
 
 
 def main():
@@ -141,7 +176,16 @@ def main():
 
             we_are_white = g % 2 == 0
             white, black = (ours, sf) if we_are_white else (sf, ours)
-            board = play_game(white, black, args.movetime)
+
+            live_cb = None
+            if args.upload:
+                conf_l = load_supabase_env()
+                b_url = os.environ.get("SUPABASE_URL") or conf_l.get("SUPABASE_URL")
+                b_key = os.environ.get("SUPABASE_KEY") or conf_l.get("SUPABASE_KEY")
+                if b_url and b_key:
+                    live_cb = make_live_cb(b_url.rstrip("/"), b_key,
+                                           "white" if we_are_white else "black")
+            board, evals = play_game(white, black, args.movetime, live_cb=live_cb)
 
             # Quit engines to reset state for next game
             ours.quit()
@@ -194,6 +238,8 @@ def main():
                 "outcome": outcome,
                 "moves": board.fullmove_number,
                 "pgn": str(game),
+                "uci": " ".join(m.uci() for m in board.move_stack),
+                "evals": json.dumps(evals),
             })
             if pgn_out:
                 print(game, file=pgn_out, flush=True)

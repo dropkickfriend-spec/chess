@@ -21,6 +21,8 @@ extern U64 passed_mask[2][64], file_mask[8], adj_files[8];
 extern U64 shield_mask[2][64];
 extern int king_atk_weight[6];
 extern int CHEB(int a, int b);
+extern U64 plan_squares[2];        // search.c: the current game plan
+extern int LOGI_PLAN;              // eval.c: plan-blockage price multiplier
 
 static const int phase_w[6] = { 0, 1, 1, 2, 4, 0 };
 
@@ -267,15 +269,15 @@ static int eval_attack_potential(const Board *bd, int phase) {
 }
 
 // Strategy: DEFENDER_LOGISTICS — the logistical freedom our own men deny
-// each other; a main purpose of any move is releasing it. For every
-// bishop/rook/queen we compare actual mobility against mobility with (a)
-// our pawns lifted and (b) all our men lifted: the gaps are latent activity
-// that a pawn push or a piece stepping aside would unlock. Pawn blockage
-// costs full price (pawns are slow, semi-permanent walls); piece blockage
-// half (a friend can vacate next move). Every line-opening move — e4
-// freeing the f1-bishop, a knight leaving the c1-bishop's diagonal — gains
-// through this term, and its learned strategy weight can rise to supersede
-// the others in the relative-weight budget when outcomes back it.
+// each other, priced by what the GAME PLAN needs. Blockage is measured as
+// latent mobility (attacks with own pawns lifted / all own men lifted minus
+// actual), but its cost is plan-relative: blocking a piece the plan uses,
+// or sealing squares the plan's routes run through, costs (10+LOGI_PLAN)/10
+// times more than cramping a bystander. So the term maps each move's
+// logistical increase or decrease AGAINST the plan — opening lines for the
+// pieces executing it scores highest, and cramping them hurts most. Pawn
+// blockage stays full price (slow walls), piece blockage half (a friend can
+// vacate next move). LOGI_PLAN is a learned registry knob.
 static int eval_pawn_logistics(const Board *bd, int phase) {
     int mg = 0, eg = 0;
     U64 occ = bd->occ[BOTH];
@@ -287,52 +289,66 @@ static int eval_pawn_logistics(const Board *bd, int phase) {
         U64 own_pawns = bd->bb[base];
         U64 occ_np   = occ & ~own_pawns;   // our pawns lifted
         U64 occ_free = occ & ~own;         // all our men lifted
+        U64 plan = plan_squares[side];
 
-        // Bishops: sealed diagonals hurt most in the middlegame
-        U64 bb = bd->bb[base + 2];
-        while (bb) {
-            int sq = LSB(bb); POP_BIT(bb, sq);
-            int now = COUNT(get_bishop_attacks(sq, occ));
-            int np  = COUNT(get_bishop_attacks(sq, occ_np));
-            int fr  = COUNT(get_bishop_attacks(sq, occ_free));
-            int by_pawn = np - now, by_piece = fr - np;
-            mg -= sign * (by_pawn * 3 + (by_piece * 3 + 1) / 2);
-            eg -= sign * (by_pawn * 2 + by_piece);
-        }
+        // Sliders: latent squares gained if own men stepped aside; the
+        // blockage cost scales up when the piece is a plan participant or
+        // its denied squares lie on the plan's routes.
+        static const int wmg[3] = { 3, 2, 1 }, weg[3] = { 2, 2, 1 };
+        for (int pt = 2; pt <= 4; pt++) {
+            U64 bb = bd->bb[base + pt];
+            while (bb) {
+                int sq = LSB(bb); POP_BIT(bb, sq);
+                U64 a_now, a_np, a_fr;
+                if (pt == 2) {
+                    a_now = get_bishop_attacks(sq, occ);
+                    a_np  = get_bishop_attacks(sq, occ_np);
+                    a_fr  = get_bishop_attacks(sq, occ_free);
+                } else if (pt == 3) {
+                    a_now = get_rook_attacks(sq, occ);
+                    a_np  = get_rook_attacks(sq, occ_np);
+                    a_fr  = get_rook_attacks(sq, occ_free);
+                } else {
+                    a_now = get_queen_attacks(sq, occ);
+                    a_np  = get_queen_attacks(sq, occ_np);
+                    a_fr  = get_queen_attacks(sq, occ_free);
+                }
+                int by_pawn = COUNT(a_np) - COUNT(a_now);
+                int by_piece = COUNT(a_fr) - COUNT(a_np);
+                if (pt == 4) by_piece = (by_piece + 1) / 2;
 
-        // Rooks: plugged files/ranks
-        bb = bd->bb[base + 3];
-        while (bb) {
-            int sq = LSB(bb); POP_BIT(bb, sq);
-            int now = COUNT(get_rook_attacks(sq, occ));
-            int np  = COUNT(get_rook_attacks(sq, occ_np));
-            int fr  = COUNT(get_rook_attacks(sq, occ_free));
-            int by_pawn = np - now, by_piece = fr - np;
-            mg -= sign * (by_pawn * 2 + by_piece);
-            eg -= sign * (by_pawn * 2 + by_piece);
-        }
+                int w = wmg[pt - 2];
+                int cmg = by_pawn * w + (by_piece * w + 1) / 2;
+                int ceg = by_pawn * weg[pt - 2] + by_piece * weg[pt - 2] / 2;
 
-        // Queens: half weight, a queen usually has alternate routes
-        bb = bd->bb[base + 4];
-        while (bb) {
-            int sq = LSB(bb); POP_BIT(bb, sq);
-            int now = COUNT(get_queen_attacks(sq, occ));
-            int np  = COUNT(get_queen_attacks(sq, occ_np));
-            int fr  = COUNT(get_queen_attacks(sq, occ_free));
-            int by_pawn = np - now, by_piece = (fr - np + 1) / 2;
-            mg -= sign * (by_pawn + by_piece);
-            eg -= sign * (by_pawn + by_piece);
+                // Plan-relative pricing: this piece is in the plan, or the
+                // squares it is denied are ones the plan travels through.
+                U64 denied = a_fr & ~a_now;
+                if (plan && ((plan & (1ULL << sq)) || (denied & plan))) {
+                    cmg = cmg * (10 + LOGI_PLAN) / 10;
+                    ceg = ceg * (10 + LOGI_PLAN) / 10;
+                }
+                mg -= sign * cmg;
+                eg -= sign * ceg;
+            }
         }
 
         // Knights: own men squatting on landing squares (pawns full price,
-        // pieces half — they can step aside)
-        bb = bd->bb[base + 1];
+        // pieces half); a plan-knight's crowding costs plan price too.
+        U64 bb = bd->bb[base + 1];
         while (bb) {
             int sq = LSB(bb); POP_BIT(bb, sq);
             int crowd_pawn  = COUNT(knight_attacks[sq] & own_pawns);
             int crowd_piece = COUNT(knight_attacks[sq] & own & ~own_pawns);
-            mg -= sign * (crowd_pawn * 2 + crowd_piece);
-            eg -= sign * crowd_pawn;
+            int cmg = crowd_pawn * 2 + crowd_piece;
+            int ceg = crowd_pawn;
+            if (plan && ((plan & (1ULL << sq))
+                         || (knight_attacks[sq] & own & plan))) {
+                cmg = cmg * (10 + LOGI_PLAN) / 10;
+                ceg = ceg * (10 + LOGI_PLAN) / 10;
+            }
+            mg -= sign * cmg;
+            eg -= sign * ceg;
         }
     }
 
@@ -481,8 +497,7 @@ const char *strategy_names[STRAT_COUNT] = {
     "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN"
 };
 
-extern U64 plan_squares[2];
-extern int PLAN_PART, PLAN_IDLE, PLAN_ENGAGE, CERT_FLOOR;
+extern int PLAN_PART, PLAN_IDLE, PLAN_ENGAGE, CERT_FLOOR, LOGI_PLAN;
 extern int plan_certainty;
 
 // Strategy: GAME_PLAN — lookahead determines current piece worth. The last
