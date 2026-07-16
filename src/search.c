@@ -541,6 +541,7 @@ int search_best_move(Board *bd, int movetime_ms, int max_depth) {
                 }
                 // Otherwise seed: order the book move first via the TT and
                 // start aspiration around the remembered score.
+                printf("info string book seed %s depth %d\n", be->uci, be->depth);
                 tt_store(root_key, 0, be->score, TT_EXACT, bmove, 0);
                 prev_score = be->score;
             }
