@@ -35,9 +35,7 @@ void generate_moves(const Board *bd, MoveList *ml) {
     int push = us == WHITE ? 8 : -8;
     int start_rank = us == WHITE ? 1 : 6;
     int promo_rank = us == WHITE ? 6 : 1;
-    int QP = us == WHITE ? WQ : BQ; // promo piece indices are QP, QP-1(R)... pattern differs; list explicitly
     int promos[4] = { us==WHITE?WQ:BQ, us==WHITE?WR:BR, us==WHITE?WB:BB_, us==WHITE?WN:BN };
-    (void)QP;
 
     U64 pawns = bd->bb[P];
     while (pawns) {

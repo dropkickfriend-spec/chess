@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>chess-bb: Self-Learning Chess Engine Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            background: linear-gradient(45deg, #00d4ff, #0099ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .section {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+        }
+        h2 { color: #00d4ff; margin-bottom: 15px; font-size: 1.5em; }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid rgba(0, 212, 255, 0.5);
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        .stat-value { font-size: 2em; font-weight: bold; color: #00d4ff; }
+        .stat-label { color: #b0b0b0; font-size: 0.9em; margin-top: 5px; }
+        .strategy-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+        .strategy-card {
+            background: rgba(0, 100, 150, 0.2);
+            border-left: 4px solid #00d4ff;
+            padding: 12px;
+            border-radius: 4px;
+        }
+        .strategy-name { font-weight: bold; color: #00d4ff; font-size: 0.9em; }
+        .strategy-value { color: #ffffff; font-size: 1.3em; margin-top: 5px; }
+        .progress-bar {
+            width: 100%; height: 8px;
+            background: rgba(0, 212, 255, 0.1);
+            border-radius: 4px; overflow: hidden; margin-top: 8px;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00d4ff, #0099ff);
+            width: 50%; border-radius: 4px;
+        }
+        .legend {
+            display: flex; flex-wrap: wrap; gap: 10px 18px;
+            margin: 10px 0 18px; font-size: 0.85em; color: #c0c0c0;
+        }
+        .legend span { display: inline-flex; align-items: center; gap: 6px; }
+        .legend i {
+            width: 14px; height: 4px; border-radius: 2px; display: inline-block;
+        }
+        .match-history { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td {
+            padding: 12px; text-align: left;
+            border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+        }
+        th { background: rgba(0, 212, 255, 0.1); color: #00d4ff; font-weight: bold; }
+        tr:hover { background: rgba(0, 212, 255, 0.05); }
+        .win { color: #00ff00; } .loss { color: #ff4444; } .draw { color: #ffaa00; }
+        .footer {
+            text-align: center; color: #666; font-size: 0.9em;
+            margin-top: 40px; padding-top: 20px;
+            border-top: 1px solid rgba(0, 212, 255, 0.2);
+        }
+        canvas { max-width: 100%; height: auto; }
+
+        /* ---- game viewer ---- */
+        .viewer {
+            display: grid;
+            grid-template-columns: minmax(280px, 440px) minmax(220px, 1fr);
+            gap: 20px;
+        }
+        @media (max-width: 760px) { .viewer { grid-template-columns: 1fr; } }
+        .board {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            width: 100%; max-width: 440px;
+            border: 2px solid rgba(0, 212, 255, 0.5);
+            border-radius: 4px; overflow: hidden;
+            user-select: none;
+        }
+        .sq {
+            aspect-ratio: 1; display: flex; position: relative;
+            align-items: center; justify-content: center;
+            font-size: clamp(20px, 4.2vw, 36px); line-height: 1;
+        }
+        .sq .pv {
+            position: absolute; bottom: 1px; right: 2px;
+            font-size: 9px; font-family: Consolas, monospace; line-height: 1;
+            pointer-events: none;
+        }
+        .sq .pv.pos { color: #7dffa8; } .sq .pv.neg { color: #ff8888; }
+        .sq .pv.zero { color: #99a; }
+        .sq .tint { position: absolute; inset: 0; pointer-events: none; }
+        .sq .pv { z-index: 1; }
+        .controls .tab.sel { background: rgba(0, 212, 255, 0.5); color: #fff; }
+        #sqPiece {
+            background: rgba(0, 212, 255, 0.15); color: #e0e0e0;
+            border: 1px solid rgba(0, 212, 255, 0.5);
+            border-radius: 6px; padding: 8px 10px;
+        }
+        .sq.light { background: #4a5a80; }
+        .sq.dark  { background: #2e3a5c; }
+        .sq.hl-from { box-shadow: inset 0 0 0 3px #ffaa00; }
+        .sq.hl-to   { box-shadow: inset 0 0 0 3px #00ff88; }
+        .controls { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+        .controls button, select#gameSel {
+            background: rgba(0, 212, 255, 0.15);
+            color: #e0e0e0; border: 1px solid rgba(0, 212, 255, 0.5);
+            border-radius: 6px; padding: 8px 14px; font-size: 0.95em;
+            cursor: pointer;
+        }
+        .controls button:hover { background: rgba(0, 212, 255, 0.35); }
+        select#gameSel { width: 100%; margin-bottom: 12px; }
+        .movelist {
+            max-height: 330px; overflow-y: auto;
+            border: 1px solid rgba(0, 212, 255, 0.25); border-radius: 6px;
+            padding: 8px; font-family: Consolas, monospace; font-size: 0.95em;
+            display: grid; grid-template-columns: 3em 1fr 1fr; gap: 2px 8px;
+            align-content: start;
+        }
+        .movelist .num { color: #667; }
+        .movelist .mv { cursor: pointer; padding: 1px 6px; border-radius: 4px; }
+        .movelist .mv:hover { background: rgba(0, 212, 255, 0.2); }
+        .movelist .mv.sel { background: rgba(0, 212, 255, 0.45); color: #fff; }
+        .valpanel {
+            margin-top: 14px;
+            background: rgba(0, 100, 150, 0.2);
+            border-left: 4px solid #00d4ff;
+            border-radius: 4px; padding: 12px 14px;
+            font-size: 0.95em; line-height: 1.7;
+        }
+        .valpanel b { color: #00d4ff; }
+        .valpanel .pos { color: #00ff88; } .valpanel .neg { color: #ff6666; }
+        .valtotals {
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 8px; margin-top: 12px;
+        }
+        .valtotals .tot {
+            background: rgba(0, 100, 150, 0.2); border-radius: 4px;
+            padding: 8px 10px; font-size: 0.88em; line-height: 1.6;
+        }
+        .valtotals .tot b { color: #00d4ff; }
+        .piecetable-wrap {
+            max-height: 260px; overflow-y: auto; margin-top: 8px;
+            border: 1px solid rgba(0, 212, 255, 0.25); border-radius: 6px;
+        }
+        .piecetable {
+            width: 100%; border-collapse: collapse;
+            font-family: Consolas, monospace; font-size: 0.85em;
+        }
+        .piecetable th, .piecetable td {
+            padding: 4px 8px; border-bottom: 1px solid rgba(0, 212, 255, 0.12);
+            text-align: right;
+        }
+        .piecetable th { position: sticky; top: 0; background: #253055; }
+        .piecetable td:first-child, .piecetable th:first-child { text-align: left; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>♟️ chess-bb: Self-Learning Chess Engine</h1>
+
+        <div class="section">
+            <h2>Match Performance vs Stockfish</h2>
+            <div class="stats-grid">
+                <div class="stat-card"><div class="stat-value" id="wins">0</div><div class="stat-label">Wins</div></div>
+                <div class="stat-card"><div class="stat-value" id="draws">0</div><div class="stat-label">Draws</div></div>
+                <div class="stat-card"><div class="stat-value" id="losses">0</div><div class="stat-label">Losses</div></div>
+                <div class="stat-card"><div class="stat-value" id="score">0%</div><div class="stat-label">Score</div></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Strategy Weights (Self-Tuning)</h2>
+            <div class="legend" id="chartLegend"></div>
+            <canvas id="weightChart" width="1100" height="280" style="width: 100%; margin-bottom: 15px;"></canvas>
+            <div class="strategy-grid" id="weightsContainer"></div>
+        </div>
+
+        <div class="section">
+            <h2>Game Viewer — per-move piece &amp; square values</h2>
+            <select id="gameSel"></select>
+            <div class="viewer">
+                <div>
+                    <div class="board" id="board"></div>
+                    <div class="controls">
+                        <button id="btnStart">⏮ Start</button>
+                        <button id="btnPrev">◀ Prev</button>
+                        <button id="btnNext">Next ▶</button>
+                        <button id="btnEnd">End ⏭</button>
+                    </div>
+                    <div class="controls" id="viewTabs">
+                        <button class="tab sel" data-mode="pieces">Piece values</button>
+                        <button class="tab" data-mode="squares">Square values</button>
+                        <button class="tab" data-mode="plan">Game plan</button>
+                        <button class="tab" data-mode="logi">Logistics</button>
+                        <button class="tab" data-mode="coord">Coordination</button>
+                        <select id="sqPiece" style="display:none">
+                            <option value="P">Pawn</option><option value="N">Knight</option>
+                            <option value="B">Bishop</option><option value="R">Rook</option>
+                            <option value="Q">Queen</option><option value="K">King</option>
+                        </select>
+                    </div>
+                    <div class="valpanel" id="valPanel">Select a move to see its piece and square values.</div>
+                    <div class="valtotals" id="valTotals"></div>
+                </div>
+                <div>
+                    <div class="movelist" id="moveList"></div>
+                    <div class="piecetable-wrap">
+                        <table class="piecetable">
+                            <thead><tr><th>Piece @ square</th><th>Material mg/eg</th><th>Square mg/eg</th></tr></thead>
+                            <tbody id="pieceTable"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Recent Matches</h2>
+            <div class="match-history">
+                <table>
+                    <thead><tr><th>Match</th><th>Color</th><th>Result</th><th>Moves</th><th>Date</th></tr></thead>
+                    <tbody id="matchTable"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>Architecture</h2>
+            <p style="line-height: 1.6; margin-bottom: 10px;">
+                <strong>chess-bb</strong> is a bitboard-based UCI chess engine with a self-tuning evaluation function.
+            </p>
+            <ul style="margin-left: 20px; line-height: 1.8;">
+                <li><strong>Strategy-Based Evaluation:</strong> 11 strategies competing for a fixed per-move evaluation budget (relative reweighting — only ratios matter)</li>
+                <li><strong>Self-Learning:</strong> surprise-driven, zero-sum weight updates after each game; square/piece values relearned from the permanent game log via Texel tuning</li>
+                <li><strong>Mate dominance:</strong> eval clamped so no learned bonus outranks a search mate score; material discounts itself under king danger</li>
+                <li><strong>Search:</strong> alpha-beta with transposition table, null-move pruning, LMR, history heuristic</li>
+                <li><strong>Persistence:</strong> weights stored locally and in Supabase; the chart pulls the full learning history live</li>
+            </ul>
+        </div>
+
+        <div class="footer">
+            <p>Live dashboard for chess-bb self-play experiments.</p>
+            <p style="margin-top: 10px; color: #444;">Last updated: <span id="timestamp">--</span></p>
+        </div>
+    </div>
+
+    <script>
+        const STRATEGY_NAMES = [
+            "DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
+            "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE",
+            "DEFENDER_LOGISTICS", "KING_ACTIVITY", "PAWN_PROMOTION",
+            "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN"
+        ];
+        const STRATEGY_COLORS = [
+            "#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8",
+            "#F7DC6F", "#BB8FCE", "#85C1E2", "#F8B739", "#52C9A3",
+            "#FF6B9D", "#E67E22", "#9B59B6"
+        ];
+
+        // Read-only anon key (RLS: select on weight tables, append-only elsewhere)
+        const SUPABASE_URL = "https://ujqngoliwxquosickvza.supabase.co";
+        const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqcW5nb2xpd3hxdW9zaWNrdnphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNjQ1NTYsImV4cCI6MjA5MzY0MDU1Nn0.AbK1tLbghKQwXCg779zoyaE7qZ3yXItfktQWVy5YigA";
+
+        async function fetchJSON(url, opts) {
+            try {
+                const r = await fetch(url, opts);
+                return r.ok ? await r.json() : null;
+            } catch { return null; }
+        }
+
+        // Full weight-learning history: every game logs one row per strategy
+        // in index order; a new snapshot starts whenever the index wraps
+        // (handles historic 11-strategy rows and current 12-strategy rows).
+        async function fetchWeightHistory() {
+            const rows = await fetchJSON(
+                `${SUPABASE_URL}/rest/v1/strategy_weights?select=strategy_idx,weight&order=id.asc&limit=12000`,
+                { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
+            if (!rows || rows.length < 11) return null;
+            const snaps = [];
+            let snap = null, lastIdx = 99;
+            for (const row of rows) {
+                if (row.strategy_idx <= lastIdx) {
+                    if (snap) snaps.push(snap);
+                    snap = new Array(STRATEGY_NAMES.length).fill(1.0);
+                }
+                snap[row.strategy_idx] = row.weight;
+                lastIdx = row.strategy_idx;
+            }
+            if (snap) snaps.push(snap);
+            return snaps.length ? snaps : null;
+        }
+
+        async function loadData() {
+            const matches = await fetchJSON('data/matches.json') || [];
+            const weightsFile = await fetchJSON('data/weights.json') || {};
+            const games = await fetchJSON('data/games.json') || [];
+            LT = await fetchJSON('data/learned_values.json') || LT;
+
+            let history = await fetchWeightHistory();
+            let current = weightsFile.current || [];
+            if (history && history.length) {
+                history = [new Array(11).fill(1.0), ...history];  // start at defaults
+                current = history[history.length - 1];
+            } else {
+                history = weightsFile.history || [];
+            }
+
+            updateStats(matches);
+            updateWeights(current);
+            drawLegend();
+            drawHistory(history);
+            updateMatchTable(matches);
+            initViewer(games);
+            document.getElementById('timestamp').textContent = new Date().toLocaleString();
+        }
+
+        function updateStats(matches) {
+            let wins = 0, draws = 0, losses = 0;
+            matches.forEach(m => {
+                const weWon = (m.result === "1-0" && m.our_color === "white") ||
+                              (m.result === "0-1" && m.our_color === "black");
+                if (m.result === "1/2-1/2") draws++;
+                else if (weWon) wins++;
+                else losses++;
+            });
+            const total = wins + draws + losses;
+            const score = total ? ((wins + draws / 2) / total * 100).toFixed(1) : 0;
+            wins_el.textContent = wins; draws_el.textContent = draws;
+            losses_el.textContent = losses; score_el.textContent = score + '%';
+        }
+        const wins_el = document.getElementById('wins'), draws_el = document.getElementById('draws'),
+              losses_el = document.getElementById('losses'), score_el = document.getElementById('score');
+
+        function updateWeights(current) {
+            const container = document.getElementById('weightsContainer');
+            container.innerHTML = '';
+            STRATEGY_NAMES.forEach((name, i) => {
+                const value = current[i] !== undefined ? current[i] : 1.0;
+                const normalized = Math.min(value / 2, 1);
+                const card = document.createElement('div');
+                card.className = 'strategy-card';
+                card.style.borderLeftColor = STRATEGY_COLORS[i];
+                card.innerHTML = `
+                    <div class="strategy-name" style="color:${STRATEGY_COLORS[i]}">${name}</div>
+                    <div class="strategy-value">${value.toFixed(3)}</div>
+                    <div class="progress-bar"><div class="progress-fill" style="width:${normalized * 100}%;background:${STRATEGY_COLORS[i]}"></div></div>`;
+                container.appendChild(card);
+            });
+        }
+
+        function drawLegend() {
+            const el = document.getElementById('chartLegend');
+            el.innerHTML = STRATEGY_NAMES.map((n, i) =>
+                `<span><i style="background:${STRATEGY_COLORS[i]}"></i>${n}</span>`).join('');
+        }
+
+        function drawHistory(history) {
+            const canvas = document.getElementById('weightChart');
+            if (!canvas || history.length < 2) return;
+            const ctx = canvas.getContext('2d');
+            const W = canvas.width, H = canvas.height, pad = 34;
+            ctx.clearRect(0, 0, W, H);
+
+            const maxW = Math.max(...history.flat(), 1.5);
+            const x = i => pad + i * (W - 2 * pad) / (history.length - 1);
+            const y = v => H - pad - (v / maxW) * (H - 2 * pad);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath(); ctx.moveTo(pad, y(1)); ctx.lineTo(W - pad, y(1)); ctx.stroke();
+            ctx.setLineDash([]);
+
+            STRATEGY_NAMES.forEach((name, s) => {
+                ctx.strokeStyle = STRATEGY_COLORS[s];
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                history.forEach((row, i) => {
+                    const v = row[s] !== undefined ? row[s] : 1.0;
+                    i === 0 ? ctx.moveTo(x(i), y(v)) : ctx.lineTo(x(i), y(v));
+                });
+                ctx.stroke();
+            });
+
+            ctx.fillStyle = '#b0b0b0';
+            ctx.font = '12px sans-serif';
+            ctx.fillText('game 0', pad, H - 10);
+            ctx.fillText('game ' + (history.length - 1), W - pad - 50, H - 10);
+            ctx.fillText(maxW.toFixed(1) + 'x', 4, pad);
+            ctx.fillText('1.0x', 4, y(1) + 4);
+        }
+
+        function updateMatchTable(matches) {
+            const tbody = document.getElementById('matchTable');
+            tbody.innerHTML = '';
+            matches.slice().reverse().forEach((m, i) => {
+                const weWon = (m.result === "1-0" && m.our_color === "white") ||
+                              (m.result === "0-1" && m.our_color === "black");
+                const cls = m.result === "1/2-1/2" ? "draw" : weWon ? "win" : "loss";
+                const txt = m.result === "1/2-1/2" ? "Draw" : m.result;
+                tbody.insertAdjacentHTML('beforeend', `
+                    <tr><td>Match ${matches.length - i}</td>
+                    <td>${m.our_color[0].toUpperCase() + m.our_color.slice(1)}</td>
+                    <td class="${cls}">${txt}</td><td>${m.moves}</td><td>${m.date || '--'}</td></tr>`);
+            });
+        }
+
+        // ---------------- game viewer ----------------
+        const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        const GLYPH = { K:"♔",Q:"♕",R:"♖",B:"♗",N:"♘",P:"♙",
+                        k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟" };
+        const PIECE_NAME = { P:"pawn", N:"knight", B:"bishop", R:"rook", Q:"queen", K:"king" };
+        let GAMES = [], curGame = 0, curPly = -1;
+        let viewMode = 'pieces', sqPiece = 'P';
+        let LT = null;   // learned value tables (data/learned_values.json)
+        const PIDX = { P:0, N:1, B:2, R:3, Q:4, K:5 };
+
+        // ---- engine value tables (mirror src/eval.c) ----
+        const MAT_MG = { P:100, N:320, B:330, R:500, Q:900, K:0 };
+        const MAT_EG = { P:120, N:300, B:330, R:520, Q:920, K:0 };
+        const PST_MG = {
+            P: [ 0,0,0,0,0,0,0,0, 50,50,50,50,50,50,50,50, 10,10,20,30,30,20,10,10,
+                 5,5,10,25,25,10,5,5, 0,0,0,20,20,0,0,0, 5,-5,-10,0,0,-10,-5,5,
+                 5,10,10,-20,-20,10,10,5, 0,0,0,0,0,0,0,0 ],
+            N: [ -50,-40,-30,-30,-30,-30,-40,-50, -40,-20,0,0,0,0,-20,-40,
+                 -30,0,10,15,15,10,0,-30, -30,5,15,20,20,15,5,-30,
+                 -30,0,15,20,20,15,0,-30, -30,5,10,15,15,10,5,-30,
+                 -40,-20,0,5,5,0,-20,-40, -50,-40,-30,-30,-30,-30,-40,-50 ],
+            B: [ -20,-10,-10,-10,-10,-10,-10,-20, -10,0,0,0,0,0,0,-10,
+                 -10,0,5,10,10,5,0,-10, -10,5,5,10,10,5,5,-10,
+                 -10,0,10,10,10,10,0,-10, -10,10,10,10,10,10,10,-10,
+                 -10,5,0,0,0,0,5,-10, -20,-10,-10,-10,-10,-10,-10,-20 ],
+            R: [ 0,0,0,0,0,0,0,0, 5,10,10,10,10,10,10,5, -5,0,0,0,0,0,0,-5,
+                 -5,0,0,0,0,0,0,-5, -5,0,0,0,0,0,0,-5, -5,0,0,0,0,0,0,-5,
+                 -5,0,0,0,0,0,0,-5, 0,0,0,5,5,0,0,0 ],
+            Q: [ -20,-10,-10,-5,-5,-10,-10,-20, -10,0,0,0,0,0,0,-10,
+                 -10,0,5,5,5,5,0,-10, -5,0,5,5,5,5,0,-5, 0,0,5,5,5,5,0,-5,
+                 -10,5,5,5,5,5,0,-10, -10,0,5,0,0,0,0,-10, -20,-10,-10,-5,-5,-10,-10,-20 ],
+            K: [ -30,-40,-40,-50,-50,-40,-40,-30, -30,-40,-40,-50,-50,-40,-40,-30,
+                 -30,-40,-40,-50,-50,-40,-40,-30, -30,-40,-40,-50,-50,-40,-40,-30,
+                 -20,-30,-30,-40,-40,-30,-30,-20, -10,-20,-20,-20,-20,-20,-20,-10,
+                 20,20,0,0,0,0,20,20, 20,30,10,0,0,10,30,20 ]
+        };
+        const PAWN_EG_T = [ 0,0,0,0,0,0,0,0, 80,80,80,80,80,80,80,80,
+                            50,50,50,50,50,50,50,50, 30,30,30,30,30,30,30,30,
+                            15,15,15,15,15,15,15,15, 5,5,5,5,5,5,5,5,
+                            5,5,5,5,5,5,5,5, 0,0,0,0,0,0,0,0 ];
+        const KING_EG_T = [ -50,-40,-30,-20,-20,-30,-40,-50, -30,-20,-10,0,0,-10,-20,-30,
+                            -30,-10,20,30,30,20,-10,-30, -30,-10,30,40,40,30,-10,-30,
+                            -30,-10,30,40,40,30,-10,-30, -30,-10,20,30,30,20,-10,-30,
+                            -30,-30,0,0,0,0,-30,-30, -50,-30,-30,-30,-30,-30,-30,-50 ];
+
+        // Learned-table accessors: prefer the exported learned values (what
+        // the engine actually plays with); fall back to compiled defaults.
+        function matMg(P) { return LT ? LT.material_mg[PIDX[P]] : MAT_MG[P]; }
+        function matEg(P) { return LT ? LT.material_eg[PIDX[P]] : MAT_EG[P]; }
+        function pstMgV(P, idx) { return LT ? LT.pst_mg[PIDX[P]][idx] : PST_MG[P][idx]; }
+        function pawnEgV(idx) { return LT ? LT.pawn_eg[idx] : PAWN_EG_T[idx]; }
+        function kingEgV(idx) { return LT ? LT.king_eg[idx] : KING_EG_T[idx]; }
+
+        // Same index convention as the engine: White reads the tables
+        // rank-flipped, Black reads them as laid out.
+        function tblIdx(sq, isWhite) {
+            const r = sq >> 3, f = sq & 7;
+            return isWhite ? (7 - r) * 8 + f : sq;
+        }
+        function pieceValues(letter, sq) {
+            const isWhite = letter === letter.toUpperCase();
+            const P = letter.toUpperCase();
+            const idx = tblIdx(sq, isWhite);
+            let pstEg;
+            if (P === 'P') pstEg = pawnEgV(idx);
+            else if (P === 'K') pstEg = kingEgV(idx);
+            else pstEg = pstMgV(P, idx);
+            return { piece: P, white: isWhite,
+                     matMg: matMg(P), matEg: matEg(P),
+                     pstMg: pstMgV(P, idx), pstEg: pstEg };
+        }
+
+        // ---- board geometry + attack utilities (for overlay tabs) ----
+        function fenBoard(fen) {
+            const b = new Array(64).fill(null);
+            fen.split(' ')[0].split('/').forEach((rank, i) => {
+                let f = 0;
+                for (const ch of rank) {
+                    if (/\d/.test(ch)) f += +ch;
+                    else b[(7 - i) * 8 + f++] = ch;
+                }
+            });
+            return b;
+        }
+        const N_OFF = [[1,2],[2,1],[2,-1],[1,-2],[-1,-2],[-2,-1],[-2,1],[-1,2]];
+        const K_OFF = [[1,-1],[1,0],[1,1],[0,-1],[0,1],[-1,-1],[-1,0],[-1,1]];
+        const DIAG = [[1,1],[1,-1],[-1,1],[-1,-1]], ORTH = [[1,0],[-1,0],[0,1],[0,-1]];
+        function offAtt(sq, offs) {
+            const r0 = sq >> 3, f0 = sq & 7, out = [];
+            for (const [dr, df] of offs) {
+                const r = r0 + dr, f = f0 + df;
+                if (r >= 0 && r < 8 && f >= 0 && f < 8) out.push(r * 8 + f);
+            }
+            return out;
+        }
+        function rayAtt(sq, dirs, occ) {
+            const r0 = sq >> 3, f0 = sq & 7, out = [];
+            for (const [dr, df] of dirs) {
+                let r = r0 + dr, f = f0 + df;
+                while (r >= 0 && r < 8 && f >= 0 && f < 8) {
+                    const s = r * 8 + f;
+                    out.push(s);
+                    if (occ.has(s)) break;
+                    r += dr; f += df;
+                }
+            }
+            return out;
+        }
+        function pawnAttJs(sq, isWhite) {
+            const r0 = sq >> 3, f0 = sq & 7, out = [], dr = isWhite ? 1 : -1;
+            for (const df of [-1, 1]) {
+                const r = r0 + dr, f = f0 + df;
+                if (r >= 0 && r < 8 && f >= 0 && f < 8) out.push(r * 8 + f);
+            }
+            return out;
+        }
+        function attacksOf(P, sq, isWhite, occ) {
+            if (P === 'P') return pawnAttJs(sq, isWhite);
+            if (P === 'N') return offAtt(sq, N_OFF);
+            if (P === 'K') return offAtt(sq, K_OFF);
+            if (P === 'B') return rayAtt(sq, DIAG, occ);
+            if (P === 'R') return rayAtt(sq, ORTH, occ);
+            return rayAtt(sq, DIAG.concat(ORTH), occ);
+        }
+
+        // ---- overlay tabs: one view per learnable set ----
+        function tintFor(v, scale) {
+            const a = Math.min(0.1 + Math.abs(v) / scale, 0.5);
+            return v > 0 ? `rgba(0,255,120,${a})` : v < 0 ? `rgba(255,60,60,${a})` : null;
+        }
+
+        function overlayPieces(cells) {
+            const o = {};
+            cells.forEach((p, s) => {
+                if (!p) return;
+                const P = p.toUpperCase();
+                o[s] = { text: String(matMg(P)),
+                         cls: p === p.toUpperCase() ? 'pos' : 'neg',
+                         tip: `learned material: ${matMg(P)} mg / ${matEg(P)} eg` };
+            });
+            return o;
+        }
+
+        function overlaySquares() {
+            const o = {};
+            for (let s = 0; s < 64; s++) {
+                const idx = (7 - (s >> 3)) * 8 + (s & 7);   // White's reading
+                const v = sqPiece === 'K' ? kingEgV(idx) : pstMgV(sqPiece, idx);
+                o[s] = { text: String(v), cls: v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero',
+                         tint: tintFor(v, 120) };
+            }
+            return o;
+        }
+
+        function overlayPlan(cells, m) {
+            const o = {};
+            if (!m || !m.plan) return o;
+            const pw = new Set(m.plan.w), pb = new Set(m.plan.b);
+            for (let s = 0; s < 64; s++) {
+                const iw = pw.has(s), ib = pb.has(s);
+                if (iw || ib)
+                    o[s] = { tint: iw && ib ? 'rgba(187,107,217,0.42)'
+                                  : iw ? 'rgba(0,212,255,0.35)'
+                                       : 'rgba(255,140,0,0.35)' };
+            }
+            cells.forEach((p, s) => {
+                if (!p) return;
+                const isW = p === p.toUpperCase();
+                const mine = isW ? pw : pb;
+                if (mine.has(s))
+                    o[s] = { ...(o[s] || {}), text: 'P', cls: 'pos',
+                             tip: 'participant in the plan' };
+                else if ('PK'.indexOf(p.toUpperCase()) < 0 && !pw.has(s) && !pb.has(s))
+                    o[s] = { ...(o[s] || {}), text: 'S', cls: 'neg',
+                             tip: 'spectator: in nobody\'s plan' };
+            });
+            return o;
+        }
+
+        function overlayLogi(cells) {
+            const o = {};
+            const occ = new Set();
+            cells.forEach((p, s) => { if (p) occ.add(s); });
+            cells.forEach((p, s) => {
+                if (!p) return;
+                const isW = p === p.toUpperCase(), P = p.toUpperCase();
+                const own = new Set(), ownPawns = new Set();
+                cells.forEach((q, t) => {
+                    if (!q) return;
+                    if ((q === q.toUpperCase()) === isW) {
+                        own.add(t);
+                        if (q.toUpperCase() === 'P') ownPawns.add(t);
+                    }
+                });
+                if ('BRQ'.includes(P)) {
+                    const dirs = P === 'B' ? DIAG : P === 'R' ? ORTH : DIAG.concat(ORTH);
+                    const occNP = new Set([...occ].filter(t => !ownPawns.has(t)));
+                    const occFree = new Set([...occ].filter(t => !own.has(t)));
+                    const now = rayAtt(s, dirs, occ).length;
+                    const np = rayAtt(s, dirs, occNP).length;
+                    const fr = rayAtt(s, dirs, occFree).length;
+                    const blocked = fr - now;
+                    if (blocked > 0)
+                        o[s] = { text: '-' + blocked, cls: 'neg',
+                                 tint: tintFor(-blocked, 14),
+                                 tip: `${np - now} squares blocked by own pawns, ${fr - np} by own pieces` };
+                } else if (P === 'N') {
+                    const crowd = offAtt(s, N_OFF).filter(t => own.has(t)).length;
+                    if (crowd > 0)
+                        o[s] = { text: '-' + crowd, cls: 'neg', tint: tintFor(-crowd, 10),
+                                 tip: `${crowd} landing squares taken by own men` };
+                }
+            });
+            return o;
+        }
+
+        function overlayCoord(cells, m) {
+            // Combined coordination: defenders a piece has + friends it
+            // activates, amplified when the piece follows the game plan.
+            const occ = new Set();
+            cells.forEach((p, s) => { if (p) occ.add(s); });
+            const cntW = new Array(64).fill(0), cntB = new Array(64).fill(0);
+            const attMap = {};
+            cells.forEach((p, s) => {
+                if (!p) return;
+                const isW = p === p.toUpperCase();
+                const att = attacksOf(p.toUpperCase(), s, isW, occ);
+                attMap[s] = att;
+                for (const t of att) (isW ? cntW : cntB)[t]++;
+            });
+            const pw = new Set(m && m.plan ? m.plan.w : []);
+            const pb = new Set(m && m.plan ? m.plan.b : []);
+            const o = {};
+            cells.forEach((p, s) => {
+                if (!p) return;
+                const isW = p === p.toUpperCase();
+                const def = (isW ? cntW : cntB)[s];
+                let act = 0;
+                for (const t of attMap[s] || [])
+                    if (cells[t] && ((cells[t] === cells[t].toUpperCase()) === isW)) act++;
+                const onPlan = (isW ? pw : pb).has(s);
+                const combined = def + act;
+                o[s] = {
+                    text: (onPlan ? '★' : '') + combined,
+                    cls: onPlan ? 'pos' : combined > 0 ? 'pos' : 'zero',
+                    tint: onPlan
+                        ? `rgba(0,212,255,${Math.min(0.18 + combined * 0.05, 0.5)})`
+                        : combined > 0
+                            ? `rgba(0,255,120,${Math.min(0.06 + combined * 0.05, 0.4)})`
+                            : null,
+                    tip: `${def} defender${def === 1 ? '' : 's'}, activates ${act} ` +
+                         `friend${act === 1 ? '' : 's'}` +
+                         (onPlan ? ' — following the game plan (amplified)' : '')
+                };
+            });
+            return o;
+        }
+
+        function computeOverlay(cells, m) {
+            if (viewMode === 'squares') return overlaySquares();
+            if (viewMode === 'plan')    return overlayPlan(cells, m);
+            if (viewMode === 'logi')    return overlayLogi(cells);
+            if (viewMode === 'coord')   return overlayCoord(cells, m);
+            return overlayPieces(cells);
+        }
+        function sqName(sq) { return "abcdefgh"[sq & 7] + ((sq >> 3) + 1); }
+
+        // Every piece on the board with its values, from a FEN.
+        function boardValues(fen) {
+            const out = [];
+            const ranks = fen.split(' ')[0].split('/');
+            ranks.forEach((rank, i) => {
+                let f = 0;
+                for (const ch of rank) {
+                    if (/\d/.test(ch)) { f += +ch; continue; }
+                    const sq = (7 - i) * 8 + f;
+                    out.push({ sq, letter: ch, ...pieceValues(ch, sq) });
+                    f++;
+                }
+            });
+            return out;
+        }
+
+        function updateValueViews(fen) {
+            const pieces = boardValues(fen);
+            const tot = { w: { mat: 0, pst: 0 }, b: { mat: 0, pst: 0 } };
+            pieces.forEach(p => {
+                const t = tot[p.white ? 'w' : 'b'];
+                t.mat += p.matMg;
+                t.pst += p.pstMg;
+            });
+
+            const order = { K: 0, Q: 1, R: 2, B: 3, N: 4, P: 5 };
+            pieces.sort((a, b) => (b.white - a.white) ||
+                                  (order[a.piece] - order[b.piece]) || (a.sq - b.sq));
+            const tbody = document.getElementById('pieceTable');
+            tbody.innerHTML = pieces.map(p => {
+                const cls = v => v > 0 ? 'pos' : v < 0 ? 'neg' : '';
+                return `<tr>
+                    <td>${GLYPH[p.letter]} ${p.white ? 'White' : 'Black'} ${PIECE_NAME[p.piece]} @ <b>${sqName(p.sq)}</b></td>
+                    <td>${p.matMg} / ${p.matEg}</td>
+                    <td><span class="${cls(p.pstMg)}">${p.pstMg > 0 ? '+' : ''}${p.pstMg}</span> /
+                        <span class="${cls(p.pstEg)}">${p.pstEg > 0 ? '+' : ''}${p.pstEg}</span></td>
+                </tr>`;
+            }).join('');
+
+            const dMat = tot.w.mat - tot.b.mat, dPst = tot.w.pst - tot.b.pst;
+            document.getElementById('valTotals').innerHTML = `
+                <div class="tot"><b>White totals</b><br>
+                    material ${tot.w.mat} · squares ${tot.w.pst > 0 ? '+' : ''}${tot.w.pst}</div>
+                <div class="tot"><b>Black totals</b><br>
+                    material ${tot.b.mat} · squares ${tot.b.pst > 0 ? '+' : ''}${tot.b.pst}</div>
+                <div class="tot" style="grid-column: 1 / -1"><b>Net (White − Black)</b>:
+                    material ${dMat > 0 ? '+' : ''}${dMat} · squares ${dPst > 0 ? '+' : ''}${dPst}
+                    · combined ${dMat + dPst > 0 ? '+' : ''}${dMat + dPst}</div>`;
+        }
+
+        function renderBoard(fen, hlFrom, hlTo, move) {
+            const boardEl = document.getElementById('board');
+            boardEl.innerHTML = '';
+            const cells = fenBoard(fen);
+            const ov = computeOverlay(cells, move);
+            for (let r = 0; r < 8; r++) {           // r = 0 renders rank 8
+                for (let f = 0; f < 8; f++) {
+                    const sq = (7 - r) * 8 + f;
+                    const name = "abcdefgh"[f] + (8 - r);
+                    const d = document.createElement('div');
+                    d.className = 'sq ' + (((r + f) % 2) ? 'dark' : 'light');
+                    if (name === hlFrom) d.classList.add('hl-from');
+                    if (name === hlTo) d.classList.add('hl-to');
+                    const p = cells[sq];
+                    d.textContent = p ? GLYPH[p] : '';
+                    const o = ov[sq];
+                    if (o) {
+                        if (o.tint) {
+                            const t = document.createElement('i');
+                            t.className = 'tint';
+                            t.style.background = o.tint;
+                            d.appendChild(t);
+                        }
+                        if (o.text !== undefined) {
+                            const b = document.createElement('span');
+                            b.className = 'pv ' + (o.cls || '');
+                            b.textContent = o.text;
+                            d.appendChild(b);
+                        }
+                        if (o.tip) d.title = (p ? `${PIECE_NAME[p.toUpperCase()]} @ ${name}: ` : `${name}: `) + o.tip;
+                    }
+                    boardEl.appendChild(d);
+                }
+            }
+        }
+
+        function initViewer(games) {
+            GAMES = games;
+            const sel = document.getElementById('gameSel');
+            sel.innerHTML = games.map((g, i) =>
+                `<option value="${i}">#${i + 1} · ${g.white} vs ${g.black} · ${g.result} · ${g.moves.length} plies · ${g.date}</option>`).join('');
+            if (!games.length) {
+                sel.innerHTML = '<option>No games exported yet</option>';
+                renderBoard(START_FEN);
+                return;
+            }
+            sel.onchange = () => selectGame(+sel.value);
+            document.getElementById('btnStart').onclick = () => setPly(-1);
+            document.getElementById('btnPrev').onclick = () => setPly(curPly - 1);
+            document.getElementById('btnNext').onclick = () => setPly(curPly + 1);
+            document.getElementById('btnEnd').onclick = () =>
+                setPly(GAMES[curGame].moves.length - 1);
+            document.querySelectorAll('#viewTabs .tab').forEach(btn => btn.onclick = () => {
+                viewMode = btn.dataset.mode;
+                document.querySelectorAll('#viewTabs .tab').forEach(b =>
+                    b.classList.toggle('sel', b === btn));
+                document.getElementById('sqPiece').style.display =
+                    viewMode === 'squares' ? '' : 'none';
+                setPly(curPly);
+            });
+            document.getElementById('sqPiece').onchange = e => {
+                sqPiece = e.target.value;
+                setPly(curPly);
+            };
+            document.addEventListener('keydown', e => {
+                if (e.key === 'ArrowLeft') setPly(curPly - 1);
+                if (e.key === 'ArrowRight') setPly(curPly + 1);
+            });
+            selectGame(0);
+        }
+
+        function selectGame(i) {
+            curGame = i;
+            const g = GAMES[i];
+            const list = document.getElementById('moveList');
+            list.innerHTML = '';
+            for (let p = 0; p < g.moves.length; p += 2) {
+                list.insertAdjacentHTML('beforeend',
+                    `<span class="num">${p / 2 + 1}.</span>` +
+                    `<span class="mv" data-ply="${p}">${g.moves[p].san}</span>` +
+                    (g.moves[p + 1] ? `<span class="mv" data-ply="${p + 1}">${g.moves[p + 1].san}</span>` : `<span></span>`));
+            }
+            list.querySelectorAll('.mv').forEach(el =>
+                el.onclick = () => setPly(+el.dataset.ply));
+            setPly(-1);
+        }
+
+        function fmt(v) {
+            const cls = v > 0 ? 'pos' : v < 0 ? 'neg' : '';
+            return `<span class="${cls}">${v > 0 ? '+' : ''}${v}</span>`;
+        }
+
+        function setPly(ply) {
+            const g = GAMES[curGame];
+            if (!g) return;
+            curPly = Math.max(-1, Math.min(ply, g.moves.length - 1));
+
+            const panel = document.getElementById('valPanel');
+            if (curPly < 0) {
+                renderBoard(START_FEN);
+                updateValueViews(START_FEN);
+                panel.innerHTML = 'Start position — step through moves to see each piece\'s material and square values.';
+            } else {
+                const m = g.moves[curPly];
+                renderBoard(m.fen, m.uci.slice(0, 2), m.uci.slice(2, 4), m);
+                updateValueViews(m.fen);
+                const side = m.color === 'w' ? 'White' : 'Black';
+                let html = `<b>${curPly % 2 ? '' : (curPly / 2 + 1) + '. '}${m.san}</b> — ` +
+                    `${side} ${PIECE_NAME[m.piece]} ${m.uci.slice(0,2)}→${m.uci.slice(2,4)}<br>` +
+                    `<b>Piece value:</b> ${m.mat[0]} mg / ${m.mat[1]} eg<br>` +
+                    `<b>Square value (mg):</b> ${m.pst_from[0]} → ${m.pst_to[0]} (${fmt(m.pst_delta[0])})<br>` +
+                    `<b>Square value (eg):</b> ${m.pst_from[1]} → ${m.pst_to[1]} (${fmt(m.pst_delta[1])})`;
+                if (m.pv)
+                    html += `<br><b>Game plan (engine PV, depth 6):</b> ${m.pv}`;
+                if (m.captured)
+                    html += `<br><b>Captures:</b> ${PIECE_NAME[m.captured]} (${fmt(m.cap_value)} material)`;
+                if (m.promo)
+                    html += `<br><b>Promotes to:</b> ${PIECE_NAME[m.promo]} (piece value now ${m.mat[0]} mg)`;
+
+                // Dynamic engine eval: what each strategy actually scored in
+                // THIS position (pawn structure re-pricing bishops, blocked
+                // lines, promotion races) — not static tables.
+                if (m.strat) {
+                    const prev = curPly > 0 ? g.moves[curPly - 1].strat : null;
+                    const rows = Object.entries(m.strat)
+                        .map(([k, v]) => {
+                            const eff = m.eff ? (m.eff[k] || 1) : 1;
+                            const d = prev ? v - (prev[k] || 0) : null;
+                            return { k, v, c: Math.round(v * eff), d };
+                        })
+                        .filter(r => r.v !== 0 || (r.d !== null && r.d !== 0))
+                        .sort((a, b) => Math.abs(b.c) - Math.abs(a.c));
+                    html += `<br><b>Engine strategy scores (this position, White POV):</b>` +
+                        `<table style="width:100%;font-size:0.9em;margin-top:4px">` +
+                        `<tr><th style="text-align:left">strategy</th><th>raw</th><th>weighted</th><th>Δ vs prev</th></tr>` +
+                        rows.map(r =>
+                            `<tr><td>${r.k}</td><td style="text-align:right">${fmt(r.v)}</td>` +
+                            `<td style="text-align:right">${fmt(r.c)}</td>` +
+                            `<td style="text-align:right">${r.d === null ? '—' : fmt(r.d)}</td></tr>`).join('') +
+                        `</table><b>Engine eval:</b> ${fmt(m.eval)} cp`;
+                }
+                panel.innerHTML = html;
+            }
+
+            document.querySelectorAll('#moveList .mv').forEach(el =>
+                el.classList.toggle('sel', +el.dataset.ply === curPly));
+            const sel = document.querySelector('#moveList .mv.sel');
+            if (sel) sel.scrollIntoView({ block: 'nearest' });
+        }
+
+        setInterval(loadData, 60000);
+        loadData();
+    </script>
+</body>
+</html>

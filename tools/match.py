@@ -29,7 +29,10 @@ DEFAULT_STOCKFISH = (shutil.which("stockfish")
                      or "/usr/games/stockfish")
 
 
-def supabase_insert(base_url, key, table, rows, return_repr=False):
+def supabase_insert(base_url, key, table, rows, return_repr=False, upsert=False):
+    prefer = "return=representation" if return_repr else "return=minimal"
+    if upsert:
+        prefer += ",resolution=merge-duplicates"
     req = urllib.request.Request(
         f"{base_url}/rest/v1/{table}",
         data=json.dumps(rows).encode(),
@@ -37,7 +40,7 @@ def supabase_insert(base_url, key, table, rows, return_repr=False):
             "apikey": key,
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
-            "Prefer": "return=representation" if return_repr else "return=minimal",
+            "Prefer": prefer,
         },
         method="POST",
     )
@@ -120,24 +123,38 @@ def main():
                     help="store results in Supabase (needs SUPABASE_URL/SUPABASE_KEY)")
     args = ap.parse_args()
 
-    ours = chess.engine.SimpleEngine.popen_uci(args.engine)
-    sf = chess.engine.SimpleEngine.popen_uci(args.stockfish)
-    sf_desc = "Stockfish"
-    if args.skill is not None:
-        sf.configure({"Skill Level": args.skill})
-        sf_desc += f" (skill {args.skill})"
-    if args.elo is not None:
-        sf.configure({"UCI_LimitStrength": True, "UCI_Elo": args.elo})
-        sf_desc += f" (elo {args.elo})"
-
     pgn_out = open(args.pgn, "w") if args.pgn else None
     wins = draws = losses = 0
     played = []
     try:
         for g in range(args.games):
+            # Create fresh engine instances for each game to avoid TT pollution
+            ours = chess.engine.SimpleEngine.popen_uci(args.engine)
+            sf = chess.engine.SimpleEngine.popen_uci(args.stockfish)
+            sf_desc = "Stockfish"
+            if args.skill is not None:
+                sf.configure({"Skill Level": args.skill})
+                sf_desc += f" (skill {args.skill})"
+            if args.elo is not None:
+                sf.configure({"UCI_LimitStrength": True, "UCI_Elo": args.elo})
+                sf_desc += f" (elo {args.elo})"
+
             we_are_white = g % 2 == 0
             white, black = (ours, sf) if we_are_white else (sf, ours)
             board = play_game(white, black, args.movetime)
+
+            # Quit engines to reset state for next game
+            ours.quit()
+            sf.quit()
+
+            # Incomplete games (engine crash, timeout) shouldn't be recorded.
+            # claim_draw matches play_game's loop condition, else games drawn
+            # by repetition/fifty-move get misfiled as incomplete.
+            if not board.is_game_over(claim_draw=True):
+                print(f"game {g+1}: INCOMPLETE (max plies reached at move {board.fullmove_number}), skipped")
+                sys.stdout.flush()
+                continue
+
             result = board.result(claim_draw=True)
 
             if result == "1/2-1/2":
@@ -182,8 +199,6 @@ def main():
                 print(game, file=pgn_out, flush=True)
                 print(file=pgn_out)
     finally:
-        ours.quit()
-        sf.quit()
         if pgn_out:
             pgn_out.close()
 

@@ -10,6 +10,7 @@
 #include "move.h"
 #include "perft.h"
 #include "eval.h"
+#include "eval_strategy.h"
 #include "tune.h"
 #include "uci.h"
 
@@ -46,10 +47,14 @@ int main(int argc, char **argv) {
     init_slider_attacks();
     eval_init();
 
-    // Optional Texel-tuned weights (same binary, different personality)
+    // Texel-tuned square/piece values: relearned once from logged games,
+    // then reloaded on every startup. CHESS_WEIGHTS overrides the default.
     const char *wf = getenv("CHESS_WEIGHTS");
-    if (wf && *wf)
-        fprintf(stderr, "loaded %d weights from %s\n", eval_load_weights(wf), wf);
+    if (!wf || !*wf) wf = "learned_values.txt";
+    {
+        int n = eval_load_weights(wf);
+        if (n) fprintf(stderr, "loaded %d weights from %s\n", n, wf);
+    }
 
     if (argc >= 2 && strcmp(argv[1], "perft") == 0) {
         int depth = argc >= 3 ? atoi(argv[2]) : 5;
@@ -73,6 +78,28 @@ int main(int argc, char **argv) {
 
     if (argc >= 3 && strcmp(argv[1], "tune") == 0) {
         tune_run(argv[2]);
+        return 0;
+    }
+
+    // Batch eval explainer: FEN per stdin line -> per-strategy breakdown.
+    // Output per line: "name raw eff_weight" x11 then "TOTAL <cp>".
+    if (argc >= 2 && strcmp(argv[1], "evalfens") == 0) {
+        StrategyWeights sw;
+        eval_default_strategy_weights(&sw);
+        eval_load_strategy_weights("strategy_weights.txt", &sw);
+        char line[256];
+        while (fgets(line, sizeof(line), stdin)) {
+            line[strcspn(line, "\r\n")] = 0;
+            if (!line[0]) continue;
+            Board bd;
+            board_from_fen(&bd, line);
+            int raw[STRAT_COUNT];
+            float eff[STRAT_COUNT];
+            int total = eval_explain(&bd, &sw, raw, eff);
+            for (int i = 0; i < STRAT_COUNT; i++)
+                printf("%s %d %.3f\n", strategy_names[i], raw[i], eff[i]);
+            printf("TOTAL %d\n", total);
+        }
         return 0;
     }
 
