@@ -31,4 +31,9 @@ extern U64 plan_squares[2];
 // far); 0 = plan churning or no lookahead yet.
 extern int plan_certainty;
 
+// Route book: persistent root-search results (position -> best move, depth,
+// score, certainty) reused across games. Loads the journal at path; enables
+// recording if the file existed or force_enable is set. Returns entries read.
+int book_load(const char *path, int force_enable);
+
 #endif

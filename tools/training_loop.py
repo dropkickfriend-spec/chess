@@ -37,7 +37,8 @@ score = 0.0
 # piece values (zero human priors at the start), and each retune below
 # starts descent from those same values — so the tables it plays with are
 # the tables it worked out from its own games.
-BOOT_ENV = dict(os.environ, CHESS_WEIGHTS="data/learned_values.txt")
+BOOT_ENV = dict(os.environ, CHESS_WEIGHTS="data/learned_values.txt",
+                CHESS_BOOK="data/route_book.txt")
 
 for it in range(1, ITERATIONS + 1):
     print(f"=== training iteration {it}/{ITERATIONS} ===", flush=True)

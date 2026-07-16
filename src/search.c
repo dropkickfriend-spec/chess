@@ -75,6 +75,82 @@ static void tt_store(U64 key, int depth, int score, int flag, int move, int ply)
     e->flag = (unsigned char)flag;
 }
 
+// ---- Route book: persistent root-search results across games ----
+// The nondeterministic side of the problem, cached: every completed root
+// search's verdict (position -> best move, depth, score, certainty) is kept
+// forever. Recurring positions — and our games repeat lines heavily — route
+// through the stored certificate instead of re-searching. Trust requires a
+// deep, fully-certain entry; anything weaker only seeds move ordering and
+// the aspiration window, so bad routes stay refutable.
+#define BOOK_SIZE   (1 << 16)
+#define BOOK_PROBE  8
+#define BOOK_TRUST_DEPTH 8
+
+typedef struct {
+    U64 key;
+    char uci[6];
+    short score;
+    unsigned char depth, certainty;
+} BookEntry;
+
+static BookEntry book[BOOK_SIZE];
+static char book_path[512];
+static int book_enabled = 0;
+
+static BookEntry *book_slot(U64 key, int for_insert) {
+    BookEntry *shallowest = NULL;
+    for (int i = 0; i < BOOK_PROBE; i++) {
+        BookEntry *e = &book[(key + i) & (BOOK_SIZE - 1)];
+        if (e->key == key) return e;
+        if (for_insert) {
+            if (!e->key) return e;
+            if (!shallowest || e->depth < shallowest->depth) shallowest = e;
+        }
+    }
+    return for_insert ? shallowest : NULL;
+}
+
+static void book_remember(U64 key, int depth, int score, int certainty,
+                          const char *uci, int persist) {
+    BookEntry *e = book_slot(key, 1);
+    if (!e) return;
+    if (e->key == key && e->depth >= depth) return;   // keep the deeper route
+    e->key = key;
+    e->score = (short)score;
+    e->depth = (unsigned char)depth;
+    e->certainty = (unsigned char)certainty;
+    strncpy(e->uci, uci, 5);
+    e->uci[5] = 0;
+
+    if (persist && book_path[0]) {
+        FILE *f = fopen(book_path, "a");
+        if (f) {
+            fprintf(f, "%016llx %d %d %d %s\n",
+                    (unsigned long long)key, depth, score, certainty, uci);
+            fclose(f);
+        }
+    }
+}
+
+int book_load(const char *path, int force_enable) {
+    strncpy(book_path, path, sizeof(book_path) - 1);
+    book_path[sizeof(book_path) - 1] = 0;
+    int n = 0;
+    FILE *f = fopen(path, "r");
+    if (f) {
+        unsigned long long key;
+        int depth, score, cert;
+        char uci[8];
+        while (fscanf(f, "%llx %d %d %d %7s", &key, &depth, &score, &cert, uci) == 5) {
+            book_remember((U64)key, depth, score, cert, uci, 0);
+            n++;
+        }
+        fclose(f);
+    }
+    book_enabled = (n > 0) || force_enable;
+    return n;
+}
+
 // ---- Search state ----
 static U64 hist[2048];          // game history + current search path
 static int hist_base;           // entries provided by the game
@@ -429,7 +505,47 @@ int search_best_move(Board *bd, int movetime_ms, int max_depth) {
 
     if (max_depth <= 0 || max_depth >= MAX_PLY) max_depth = MAX_PLY - 1;
 
-    int best = 0, prev_score = 0;
+    int best = 0, prev_score = 0, done_depth = 0;
+
+    // Route book: reuse this position's stored certificate if we have one.
+    U64 root_key = hist[hist_len];
+    if (book_enabled) {
+        BookEntry *be = book_slot(root_key, 0);
+        if (be) {
+            // Resolve the stored UCI against the CURRENT legal moves — the
+            // book never plays an illegal or stale move.
+            int bmove = 0;
+            MoveList ml;
+            generate_legal_moves(bd, &ml);
+            for (int i = 0; i < ml.count; i++) {
+                char buf[6];
+                move_to_str(ml.moves[i], buf);
+                if (strcmp(buf, be->uci) == 0) { bmove = ml.moves[i]; break; }
+            }
+            if (bmove) {
+                // Repetition safety: never instant-trust a route through a
+                // position this game has already visited.
+                int seen = 0;
+                for (int i = 0; i < hist_len; i++)
+                    if (hist[i] == root_key) { seen = 1; break; }
+
+                // Full trust only for deep, fully-certain certificates on
+                // time-managed searches (depth-limited callers are probing).
+                if (!seen && be->certainty == 100
+                    && be->depth >= BOOK_TRUST_DEPTH
+                    && max_depth >= MAX_PLY - 1) {
+                    printf("info string book route depth %d score %d\n",
+                           be->depth, be->score);
+                    fflush(stdout);
+                    return bmove;
+                }
+                // Otherwise seed: order the book move first via the TT and
+                // start aspiration around the remembered score.
+                tt_store(root_key, 0, be->score, TT_EXACT, bmove, 0);
+                prev_score = be->score;
+            }
+        }
+    }
     for (int depth = 1; depth <= max_depth; depth++) {
         // Aspiration window around the last score; widen on a miss
         int alpha = depth >= 4 ? prev_score - 40 : -INF_SCORE;
@@ -440,6 +556,7 @@ int search_best_move(Board *bd, int movetime_ms, int max_depth) {
         if (stop_search) break;  // partial iteration: keep previous best
         prev_score = score;
         best = pv_tab[0][0];
+        done_depth = depth;
 
         // Publish this depth's plan for the next iteration's eval: the
         // squares each side's part of the line moves through.
@@ -490,6 +607,13 @@ int search_best_move(Board *bd, int movetime_ms, int max_depth) {
         MoveList ml;
         generate_legal_moves(bd, &ml);
         if (ml.count) best = ml.moves[0];
+    }
+
+    // Record the route: this position's verdict joins the permanent book.
+    if (book_enabled && best && done_depth > 0) {
+        char buf[6];
+        move_to_str(best, buf);
+        book_remember(root_key, done_depth, prev_score, plan_certainty, buf, 1);
     }
     return best;
 }
