@@ -121,6 +121,14 @@
         }
         .sq .pv.pos { color: #7dffa8; } .sq .pv.neg { color: #ff8888; }
         .sq .pv.zero { color: #99a; }
+        .sq .tint { position: absolute; inset: 0; pointer-events: none; }
+        .sq .pv { z-index: 1; }
+        .controls .tab.sel { background: rgba(0, 212, 255, 0.5); color: #fff; }
+        #sqPiece {
+            background: rgba(0, 212, 255, 0.15); color: #e0e0e0;
+            border: 1px solid rgba(0, 212, 255, 0.5);
+            border-radius: 6px; padding: 8px 10px;
+        }
         .sq.light { background: #4a5a80; }
         .sq.dark  { background: #2e3a5c; }
         .sq.hl-from { box-shadow: inset 0 0 0 3px #ffaa00; }
@@ -211,7 +219,18 @@
                         <button id="btnPrev">◀ Prev</button>
                         <button id="btnNext">Next ▶</button>
                         <button id="btnEnd">End ⏭</button>
-                        <button id="btnVals">Square values: on</button>
+                    </div>
+                    <div class="controls" id="viewTabs">
+                        <button class="tab sel" data-mode="pieces">Piece values</button>
+                        <button class="tab" data-mode="squares">Square values</button>
+                        <button class="tab" data-mode="plan">Game plan</button>
+                        <button class="tab" data-mode="logi">Logistics</button>
+                        <button class="tab" data-mode="coord">Coordination</button>
+                        <select id="sqPiece" style="display:none">
+                            <option value="P">Pawn</option><option value="N">Knight</option>
+                            <option value="B">Bishop</option><option value="R">Rook</option>
+                            <option value="Q">Queen</option><option value="K">King</option>
+                        </select>
                     </div>
                     <div class="valpanel" id="valPanel">Select a move to see its piece and square values.</div>
                     <div class="valtotals" id="valTotals"></div>
@@ -308,6 +327,7 @@
             const matches = await fetchJSON('data/matches.json') || [];
             const weightsFile = await fetchJSON('data/weights.json') || {};
             const games = await fetchJSON('data/games.json') || [];
+            LT = await fetchJSON('data/learned_values.json') || LT;
 
             let history = await fetchWeightHistory();
             let current = weightsFile.current || [];
@@ -422,7 +442,10 @@
         const GLYPH = { K:"♔",Q:"♕",R:"♖",B:"♗",N:"♘",P:"♙",
                         k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟" };
         const PIECE_NAME = { P:"pawn", N:"knight", B:"bishop", R:"rook", Q:"queen", K:"king" };
-        let GAMES = [], curGame = 0, curPly = -1, showVals = true;
+        let GAMES = [], curGame = 0, curPly = -1;
+        let viewMode = 'pieces', sqPiece = 'P';
+        let LT = null;   // learned value tables (data/learned_values.json)
+        const PIDX = { P:0, N:1, B:2, R:3, Q:4, K:5 };
 
         // ---- engine value tables (mirror src/eval.c) ----
         const MAT_MG = { P:100, N:320, B:330, R:500, Q:900, K:0 };
@@ -459,6 +482,14 @@
                             -30,-10,30,40,40,30,-10,-30, -30,-10,20,30,30,20,-10,-30,
                             -30,-30,0,0,0,0,-30,-30, -50,-30,-30,-30,-30,-30,-30,-50 ];
 
+        // Learned-table accessors: prefer the exported learned values (what
+        // the engine actually plays with); fall back to compiled defaults.
+        function matMg(P) { return LT ? LT.material_mg[PIDX[P]] : MAT_MG[P]; }
+        function matEg(P) { return LT ? LT.material_eg[PIDX[P]] : MAT_EG[P]; }
+        function pstMgV(P, idx) { return LT ? LT.pst_mg[PIDX[P]][idx] : PST_MG[P][idx]; }
+        function pawnEgV(idx) { return LT ? LT.pawn_eg[idx] : PAWN_EG_T[idx]; }
+        function kingEgV(idx) { return LT ? LT.king_eg[idx] : KING_EG_T[idx]; }
+
         // Same index convention as the engine: White reads the tables
         // rank-flipped, Black reads them as laid out.
         function tblIdx(sq, isWhite) {
@@ -470,12 +501,186 @@
             const P = letter.toUpperCase();
             const idx = tblIdx(sq, isWhite);
             let pstEg;
-            if (P === 'P') pstEg = PAWN_EG_T[idx];
-            else if (P === 'K') pstEg = KING_EG_T[idx];
-            else pstEg = PST_MG[P][idx];
+            if (P === 'P') pstEg = pawnEgV(idx);
+            else if (P === 'K') pstEg = kingEgV(idx);
+            else pstEg = pstMgV(P, idx);
             return { piece: P, white: isWhite,
-                     matMg: MAT_MG[P], matEg: MAT_EG[P],
-                     pstMg: PST_MG[P][idx], pstEg: pstEg };
+                     matMg: matMg(P), matEg: matEg(P),
+                     pstMg: pstMgV(P, idx), pstEg: pstEg };
+        }
+
+        // ---- board geometry + attack utilities (for overlay tabs) ----
+        function fenBoard(fen) {
+            const b = new Array(64).fill(null);
+            fen.split(' ')[0].split('/').forEach((rank, i) => {
+                let f = 0;
+                for (const ch of rank) {
+                    if (/\d/.test(ch)) f += +ch;
+                    else b[(7 - i) * 8 + f++] = ch;
+                }
+            });
+            return b;
+        }
+        const N_OFF = [[1,2],[2,1],[2,-1],[1,-2],[-1,-2],[-2,-1],[-2,1],[-1,2]];
+        const K_OFF = [[1,-1],[1,0],[1,1],[0,-1],[0,1],[-1,-1],[-1,0],[-1,1]];
+        const DIAG = [[1,1],[1,-1],[-1,1],[-1,-1]], ORTH = [[1,0],[-1,0],[0,1],[0,-1]];
+        function offAtt(sq, offs) {
+            const r0 = sq >> 3, f0 = sq & 7, out = [];
+            for (const [dr, df] of offs) {
+                const r = r0 + dr, f = f0 + df;
+                if (r >= 0 && r < 8 && f >= 0 && f < 8) out.push(r * 8 + f);
+            }
+            return out;
+        }
+        function rayAtt(sq, dirs, occ) {
+            const r0 = sq >> 3, f0 = sq & 7, out = [];
+            for (const [dr, df] of dirs) {
+                let r = r0 + dr, f = f0 + df;
+                while (r >= 0 && r < 8 && f >= 0 && f < 8) {
+                    const s = r * 8 + f;
+                    out.push(s);
+                    if (occ.has(s)) break;
+                    r += dr; f += df;
+                }
+            }
+            return out;
+        }
+        function pawnAttJs(sq, isWhite) {
+            const r0 = sq >> 3, f0 = sq & 7, out = [], dr = isWhite ? 1 : -1;
+            for (const df of [-1, 1]) {
+                const r = r0 + dr, f = f0 + df;
+                if (r >= 0 && r < 8 && f >= 0 && f < 8) out.push(r * 8 + f);
+            }
+            return out;
+        }
+        function attacksOf(P, sq, isWhite, occ) {
+            if (P === 'P') return pawnAttJs(sq, isWhite);
+            if (P === 'N') return offAtt(sq, N_OFF);
+            if (P === 'K') return offAtt(sq, K_OFF);
+            if (P === 'B') return rayAtt(sq, DIAG, occ);
+            if (P === 'R') return rayAtt(sq, ORTH, occ);
+            return rayAtt(sq, DIAG.concat(ORTH), occ);
+        }
+
+        // ---- overlay tabs: one view per learnable set ----
+        function tintFor(v, scale) {
+            const a = Math.min(0.1 + Math.abs(v) / scale, 0.5);
+            return v > 0 ? `rgba(0,255,120,${a})` : v < 0 ? `rgba(255,60,60,${a})` : null;
+        }
+
+        function overlayPieces(cells) {
+            const o = {};
+            cells.forEach((p, s) => {
+                if (!p) return;
+                const P = p.toUpperCase();
+                o[s] = { text: String(matMg(P)),
+                         cls: p === p.toUpperCase() ? 'pos' : 'neg',
+                         tip: `learned material: ${matMg(P)} mg / ${matEg(P)} eg` };
+            });
+            return o;
+        }
+
+        function overlaySquares() {
+            const o = {};
+            for (let s = 0; s < 64; s++) {
+                const idx = (7 - (s >> 3)) * 8 + (s & 7);   // White's reading
+                const v = sqPiece === 'K' ? kingEgV(idx) : pstMgV(sqPiece, idx);
+                o[s] = { text: String(v), cls: v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero',
+                         tint: tintFor(v, 120) };
+            }
+            return o;
+        }
+
+        function overlayPlan(cells, m) {
+            const o = {};
+            if (!m || !m.plan) return o;
+            const pw = new Set(m.plan.w), pb = new Set(m.plan.b);
+            for (let s = 0; s < 64; s++) {
+                const iw = pw.has(s), ib = pb.has(s);
+                if (iw || ib)
+                    o[s] = { tint: iw && ib ? 'rgba(187,107,217,0.42)'
+                                  : iw ? 'rgba(0,212,255,0.35)'
+                                       : 'rgba(255,140,0,0.35)' };
+            }
+            cells.forEach((p, s) => {
+                if (!p) return;
+                const isW = p === p.toUpperCase();
+                const mine = isW ? pw : pb;
+                if (mine.has(s))
+                    o[s] = { ...(o[s] || {}), text: 'P', cls: 'pos',
+                             tip: 'participant in the plan' };
+                else if ('PK'.indexOf(p.toUpperCase()) < 0 && !pw.has(s) && !pb.has(s))
+                    o[s] = { ...(o[s] || {}), text: 'S', cls: 'neg',
+                             tip: 'spectator: in nobody\'s plan' };
+            });
+            return o;
+        }
+
+        function overlayLogi(cells) {
+            const o = {};
+            const occ = new Set();
+            cells.forEach((p, s) => { if (p) occ.add(s); });
+            cells.forEach((p, s) => {
+                if (!p) return;
+                const isW = p === p.toUpperCase(), P = p.toUpperCase();
+                const own = new Set(), ownPawns = new Set();
+                cells.forEach((q, t) => {
+                    if (!q) return;
+                    if ((q === q.toUpperCase()) === isW) {
+                        own.add(t);
+                        if (q.toUpperCase() === 'P') ownPawns.add(t);
+                    }
+                });
+                if ('BRQ'.includes(P)) {
+                    const dirs = P === 'B' ? DIAG : P === 'R' ? ORTH : DIAG.concat(ORTH);
+                    const occNP = new Set([...occ].filter(t => !ownPawns.has(t)));
+                    const occFree = new Set([...occ].filter(t => !own.has(t)));
+                    const now = rayAtt(s, dirs, occ).length;
+                    const np = rayAtt(s, dirs, occNP).length;
+                    const fr = rayAtt(s, dirs, occFree).length;
+                    const blocked = fr - now;
+                    if (blocked > 0)
+                        o[s] = { text: '-' + blocked, cls: 'neg',
+                                 tint: tintFor(-blocked, 14),
+                                 tip: `${np - now} squares blocked by own pawns, ${fr - np} by own pieces` };
+                } else if (P === 'N') {
+                    const crowd = offAtt(s, N_OFF).filter(t => own.has(t)).length;
+                    if (crowd > 0)
+                        o[s] = { text: '-' + crowd, cls: 'neg', tint: tintFor(-crowd, 10),
+                                 tip: `${crowd} landing squares taken by own men` };
+                }
+            });
+            return o;
+        }
+
+        function overlayCoord(cells) {
+            const occ = new Set();
+            cells.forEach((p, s) => { if (p) occ.add(s); });
+            const cntW = new Array(64).fill(0), cntB = new Array(64).fill(0);
+            cells.forEach((p, s) => {
+                if (!p) return;
+                const isW = p === p.toUpperCase();
+                for (const t of attacksOf(p.toUpperCase(), s, isW, occ))
+                    (isW ? cntW : cntB)[t]++;
+            });
+            const o = {};
+            cells.forEach((p, s) => {
+                if (!p) return;
+                const isW = p === p.toUpperCase();
+                const d = (isW ? cntW : cntB)[s];
+                o[s] = { text: '+' + d, cls: d > 0 ? 'pos' : 'zero',
+                         tint: d > 0 ? `rgba(0,255,120,${Math.min(0.08 + d * 0.07, 0.45)})` : null,
+                         tip: `defended by ${d} friendly ${d === 1 ? 'piece' : 'pieces'}` };
+            });
+            return o;
+        }
+
+        function computeOverlay(cells, m) {
+            if (viewMode === 'squares') return overlaySquares();
+            if (viewMode === 'plan')    return overlayPlan(cells, m);
+            if (viewMode === 'logi')    return overlayLogi(cells);
+            if (viewMode === 'coord')   return overlayCoord(cells);
+            return overlayPieces(cells);
         }
         function sqName(sq) { return "abcdefgh"[sq & 7] + ((sq >> 3) + 1); }
 
@@ -529,37 +734,39 @@
                     · combined ${dMat + dPst > 0 ? '+' : ''}${dMat + dPst}</div>`;
         }
 
-        function renderBoard(fen, hlFrom, hlTo) {
-            const board = document.getElementById('board');
-            board.innerHTML = '';
-            const ranks = fen.split(' ')[0].split('/');
-            ranks.forEach((rank, r) => {
-                let f = 0;
-                for (const ch of rank) {
-                    if (/\d/.test(ch)) {
-                        for (let i = 0; i < +ch; i++) addSq(board, r, f++, '', null);
-                    } else addSq(board, r, f++, GLYPH[ch] || '', ch);
-                }
-            });
-            function addSq(board, r, f, glyph, letter) {
-                const name = "abcdefgh"[f] + (8 - r);
-                const d = document.createElement('div');
-                d.className = 'sq ' + (((r + f) % 2) ? 'dark' : 'light');
-                if (name === hlFrom) d.classList.add('hl-from');
-                if (name === hlTo) d.classList.add('hl-to');
-                d.textContent = glyph;
-                if (letter && showVals) {
+        function renderBoard(fen, hlFrom, hlTo, move) {
+            const boardEl = document.getElementById('board');
+            boardEl.innerHTML = '';
+            const cells = fenBoard(fen);
+            const ov = computeOverlay(cells, move);
+            for (let r = 0; r < 8; r++) {           // r = 0 renders rank 8
+                for (let f = 0; f < 8; f++) {
                     const sq = (7 - r) * 8 + f;
-                    const v = pieceValues(letter, sq).pstMg;
-                    const b = document.createElement('span');
-                    b.className = 'pv ' + (v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero');
-                    b.textContent = (v > 0 ? '+' : '') + v;
-                    d.appendChild(b);
-                    d.title = `${letter === letter.toUpperCase() ? 'White' : 'Black'} ` +
-                        `${PIECE_NAME[letter.toUpperCase()]} @ ${name} — ` +
-                        `material ${MAT_MG[letter.toUpperCase()]} mg, square ${v > 0 ? '+' : ''}${v} mg`;
+                    const name = "abcdefgh"[f] + (8 - r);
+                    const d = document.createElement('div');
+                    d.className = 'sq ' + (((r + f) % 2) ? 'dark' : 'light');
+                    if (name === hlFrom) d.classList.add('hl-from');
+                    if (name === hlTo) d.classList.add('hl-to');
+                    const p = cells[sq];
+                    d.textContent = p ? GLYPH[p] : '';
+                    const o = ov[sq];
+                    if (o) {
+                        if (o.tint) {
+                            const t = document.createElement('i');
+                            t.className = 'tint';
+                            t.style.background = o.tint;
+                            d.appendChild(t);
+                        }
+                        if (o.text !== undefined) {
+                            const b = document.createElement('span');
+                            b.className = 'pv ' + (o.cls || '');
+                            b.textContent = o.text;
+                            d.appendChild(b);
+                        }
+                        if (o.tip) d.title = (p ? `${PIECE_NAME[p.toUpperCase()]} @ ${name}: ` : `${name}: `) + o.tip;
+                    }
+                    boardEl.appendChild(d);
                 }
-                board.appendChild(d);
             }
         }
 
@@ -579,10 +786,16 @@
             document.getElementById('btnNext').onclick = () => setPly(curPly + 1);
             document.getElementById('btnEnd').onclick = () =>
                 setPly(GAMES[curGame].moves.length - 1);
-            document.getElementById('btnVals').onclick = () => {
-                showVals = !showVals;
-                document.getElementById('btnVals').textContent =
-                    'Square values: ' + (showVals ? 'on' : 'off');
+            document.querySelectorAll('#viewTabs .tab').forEach(btn => btn.onclick = () => {
+                viewMode = btn.dataset.mode;
+                document.querySelectorAll('#viewTabs .tab').forEach(b =>
+                    b.classList.toggle('sel', b === btn));
+                document.getElementById('sqPiece').style.display =
+                    viewMode === 'squares' ? '' : 'none';
+                setPly(curPly);
+            });
+            document.getElementById('sqPiece').onchange = e => {
+                sqPiece = e.target.value;
                 setPly(curPly);
             };
             document.addEventListener('keydown', e => {
@@ -625,7 +838,7 @@
                 panel.innerHTML = 'Start position — step through moves to see each piece\'s material and square values.';
             } else {
                 const m = g.moves[curPly];
-                renderBoard(m.fen, m.uci.slice(0, 2), m.uci.slice(2, 4));
+                renderBoard(m.fen, m.uci.slice(0, 2), m.uci.slice(2, 4), m);
                 updateValueViews(m.fen);
                 const side = m.color === 'w' ? 'White' : 'Black';
                 let html = `<b>${curPly % 2 ? '' : (curPly / 2 + 1) + '. '}${m.san}</b> — ` +
@@ -633,6 +846,8 @@
                     `<b>Piece value:</b> ${m.mat[0]} mg / ${m.mat[1]} eg<br>` +
                     `<b>Square value (mg):</b> ${m.pst_from[0]} → ${m.pst_to[0]} (${fmt(m.pst_delta[0])})<br>` +
                     `<b>Square value (eg):</b> ${m.pst_from[1]} → ${m.pst_to[1]} (${fmt(m.pst_delta[1])})`;
+                if (m.pv)
+                    html += `<br><b>Game plan (engine PV, depth 6):</b> ${m.pv}`;
                 if (m.captured)
                     html += `<br><b>Captures:</b> ${PIECE_NAME[m.captured]} (${fmt(m.cap_value)} material)`;
                 if (m.promo)

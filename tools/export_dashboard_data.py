@@ -20,7 +20,7 @@ import sys
 import chess
 import chess.pgn
 
-MAX_GAMES = int(sys.argv[1]) if len(sys.argv) > 1 else 24
+MAX_GAMES = int(sys.argv[1]) if len(sys.argv) > 1 else 12
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -176,10 +176,88 @@ def move_record(board, move):
 
 import subprocess
 
+import chess.engine
+
 STRATS = ["DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
           "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE",
           "DEFENDER_LOGISTICS", "KING_ACTIVITY", "PAWN_PROMOTION",
-          "OPPOSITION", "MATERIAL"]
+          "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN"]
+
+PLAN_DEPTH = 6   # lookahead per exported position for the plan overlay
+
+
+def export_learned_values():
+    """Merge learned_values.txt over the compiled defaults -> JSON for the
+    dashboard, so the board overlays show what the engine actually plays
+    with (registry semantics: material_mg+1 index 0 is the knight)."""
+    tables = {
+        "material_mg": list(MATERIAL_MG),
+        "material_eg": list(MATERIAL_EG),
+        "pst_mg": [list(t) for t in PST_MG],
+        "pawn_eg": list(PAWN_EG),
+        "king_eg": list(KING_EG),
+    }
+    path = os.path.join(ROOT, "data", "learned_values.txt")
+    try:
+        with open(path) as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) != 3:
+                    continue
+                name, idx, val = parts[0], int(parts[1]), int(parts[2])
+                if name == "material_mg+1" and idx < 5:
+                    tables["material_mg"][idx + 1] = val
+                elif name == "material_eg" and idx < 5:
+                    tables["material_eg"][idx] = val
+                elif name.startswith("pst_mg[") and idx < 64:
+                    tables["pst_mg"][int(name[7])][idx] = val
+                elif name == "pawn_eg" and idx < 64:
+                    tables["pawn_eg"][idx] = val
+                elif name == "king_eg" and idx < 64:
+                    tables["king_eg"][idx] = val
+    except OSError:
+        pass
+    out = os.path.join(ROOT, "docs", "data", "learned_values.json")
+    with open(out, "w") as f:
+        json.dump(tables, f)
+    print("exported learned value tables")
+
+
+def attach_plans(games_out):
+    """Run the engine's own lookahead on every exported position: the PV is
+    the game plan; record its squares per side plus the line itself."""
+    env = dict(os.environ,
+               CHESS_WEIGHTS=os.path.join(ROOT, "data", "learned_values.txt"))
+    eng = chess.engine.SimpleEngine.popen_uci(
+        os.path.join(ROOT, "chess"), env=env)
+    try:
+        for g in games_out:
+            for m in g["moves"]:
+                board = chess.Board(m["fen"])
+                if board.is_game_over():
+                    continue
+                try:
+                    info = eng.analyse(board, chess.engine.Limit(depth=PLAN_DEPTH))
+                except chess.engine.EngineError:
+                    continue
+                pv = info.get("pv", [])
+                plan = {"w": set(), "b": set()}
+                side = board.turn
+                for mv in pv:
+                    key = "w" if side == chess.WHITE else "b"
+                    plan[key].add(mv.from_square)
+                    plan[key].add(mv.to_square)
+                    side = not side
+                m["plan"] = {"w": sorted(plan["w"]), "b": sorted(plan["b"])}
+                b2 = board.copy()
+                sans = []
+                for mv in pv[:8]:
+                    sans.append(b2.san(mv))
+                    b2.push(mv)
+                m["pv"] = " ".join(sans)
+    finally:
+        eng.quit()
+    print("attached lookahead plans")
 
 
 def eval_breakdowns(fens):
@@ -239,9 +317,12 @@ def main():
             "moves": moves,
         })
 
+    attach_plans(out_games)
+
     os.makedirs(os.path.join(ROOT, "docs", "data"), exist_ok=True)
     with open(os.path.join(ROOT, "docs", "data", "games.json"), "w") as f:
         json.dump(out_games, f)
+    export_learned_values()
     print(f"exported {len(out_games)} games "
           f"({sum(len(g['moves']) for g in out_games)} moves)")
 
