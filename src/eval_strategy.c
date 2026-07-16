@@ -364,6 +364,76 @@ static int eval_pawn_logistics(const Board *bd, int phase) {
     return (mg * phase + eg * (24 - phase)) / 24;
 }
 
+// Strategy: DEVELOPMENT — minors off their home squares, no early queen
+// sorties while behind in development, castled king credit. Opening only.
+static int eval_development(const Board *bd, int phase) {
+    int mg = 0;
+    const U64 W_HOME = (1ULL<<B1)|(1ULL<<C1)|(1ULL<<F1)|(1ULL<<G1);
+    const U64 B_HOME = (1ULL<<B8)|(1ULL<<C8)|(1ULL<<F8)|(1ULL<<G8);
+
+    int w_home = COUNT((bd->bb[WN] | bd->bb[WB]) & W_HOME);
+    int b_home = COUNT((bd->bb[BN] | bd->bb[BB_]) & B_HOME);
+    mg -= 12 * w_home;
+    mg += 12 * b_home;
+
+    if (w_home >= 2 && bd->bb[WQ] && !(bd->bb[WQ] & (1ULL<<D1))) mg -= 15;
+    if (b_home >= 2 && bd->bb[BQ] && !(bd->bb[BQ] & (1ULL<<D8))) mg += 15;
+
+    if (bd->bb[WK] & ((1ULL<<G1)|(1ULL<<C1))) mg += 20;
+    if (bd->bb[BK] & ((1ULL<<G8)|(1ULL<<C8))) mg -= 20;
+
+    return mg * phase / 24;
+}
+
+// Strategy: CENTER_CONTROL — occupation of and attacks on d4/e4/d5/e5.
+static int eval_center_control(const Board *bd, int phase) {
+    const U64 CENTER = (1ULL<<27)|(1ULL<<28)|(1ULL<<35)|(1ULL<<36);
+    int mg = 8 * (COUNT(bd->bb[WP] & CENTER) - COUNT(bd->bb[BP] & CENTER));
+
+    U64 c = CENTER;
+    while (c) {
+        int sq = LSB(c); POP_BIT(c, sq);
+        mg += 3 * COUNT(pawn_attacks[BLACK][sq] & bd->bb[WP]);
+        mg -= 3 * COUNT(pawn_attacks[WHITE][sq] & bd->bb[BP]);
+        mg += 2 * COUNT(knight_attacks[sq] & bd->bb[WN]);
+        mg -= 2 * COUNT(knight_attacks[sq] & bd->bb[BN]);
+    }
+    return mg * phase / 24;
+}
+
+// Strategy: KING_ACTIVITY — endgame king centralisation and pawn proximity.
+static int eval_king_activity(const Board *bd, int phase) {
+    if (!bd->bb[WK] || !bd->bb[BK]) return 0;
+    int wk = LSB(bd->bb[WK]), bk = LSB(bd->bb[BK]);
+
+    int wc = CHEB(wk, 27) < CHEB(wk, 36) ? CHEB(wk, 27) : CHEB(wk, 36);
+    int bc = CHEB(bk, 27) < CHEB(bk, 36) ? CHEB(bk, 27) : CHEB(bk, 36);
+    int eg = 6 * (bc - wc);
+
+    U64 p = bd->bb[WP] | bd->bb[BP];
+    while (p) {
+        int sq = LSB(p); POP_BIT(p, sq);
+        eg += 2 * (CHEB(bk, sq) - CHEB(wk, sq));
+    }
+    return eg * (24 - phase) / 24;
+}
+
+// Strategy: OPPOSITION — in pure pawn endings, direct/diagonal opposition
+// belongs to the side NOT to move (the mover must give way).
+static int eval_opposition(const Board *bd, int phase) {
+    U64 pieces = bd->bb[WN]|bd->bb[WB]|bd->bb[WR]|bd->bb[WQ]
+               | bd->bb[BN]|bd->bb[BB_]|bd->bb[BR]|bd->bb[BQ];
+    if (pieces || !bd->bb[WK] || !bd->bb[BK]) return 0;
+
+    int wk = LSB(bd->bb[WK]), bk = LSB(bd->bb[BK]);
+    int rd = abs(wk/8 - bk/8), fd = abs(wk%8 - bk%8);
+    int eg = 0;
+    if ((rd == 2 && fd == 0) || (rd == 0 && fd == 2) || (rd == 2 && fd == 2))
+        eg = bd->side == WHITE ? -25 : 25;
+
+    return eg * (24 - phase) / 24;
+}
+
 void eval_default_strategy_weights(StrategyWeights *w) {
     for (int i = 0; i < STRAT_COUNT; i++) {
         w->weight[i] = 1.0f;
@@ -428,6 +498,18 @@ int eval_with_strategies(const Board *bd, const StrategyWeights *w) {
     // DEFENDER_LOGISTICS — pawn blockage of own pieces vs promotion certainty
     if (w->enabled[STRAT_DEFENDER_LOGISTICS])
         score += (int)(eval_pawn_logistics(bd, phase) * w->weight[STRAT_DEFENDER_LOGISTICS]);
+
+    // DEVELOPMENT + CENTER_CONTROL (opening-tapered)
+    if (w->enabled[STRAT_DEVELOPMENT])
+        score += (int)(eval_development(bd, phase) * w->weight[STRAT_DEVELOPMENT]);
+    if (w->enabled[STRAT_CENTER_CONTROL])
+        score += (int)(eval_center_control(bd, phase) * w->weight[STRAT_CENTER_CONTROL]);
+
+    // KING_ACTIVITY + OPPOSITION (endgame-tapered)
+    if (w->enabled[STRAT_KING_ACTIVITY])
+        score += (int)(eval_king_activity(bd, phase) * w->weight[STRAT_KING_ACTIVITY]);
+    if (w->enabled[STRAT_OPPOSITION])
+        score += (int)(eval_opposition(bd, phase) * w->weight[STRAT_OPPOSITION]);
 
     // No learned bonus may ever rival a mate: search scores mates ±32000,
     // and this clamp keeps runaway multiplicative weights out of that window.
