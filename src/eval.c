@@ -116,6 +116,12 @@ int CHEB(int a, int b) {
 // magnitudes are learned from game outcomes via the tuning registry.
 int coord_w[5] = { 4, 4, 4, 4, 4 };
 
+// Game-plan pricing (percent of a piece's material value): participants in
+// the search's current plan appreciate, developed spectators depreciate.
+// Learned through the registry; seeds are unit scale only.
+int PLAN_PART = 8;
+int PLAN_IDLE = 4;
+
 // Scalar terms are plain ints (uppercase kept from their #define past) so
 // the Texel tuner can adjust them through the registry below.
 int ISOLATED_MG  = -10;
@@ -147,6 +153,7 @@ const ParamBlock eval_params[] = {
     { "ROOK_OPEN", &ROOK_OPEN, 1 }, { "ROOK_SEMIOPEN", &ROOK_SEMIOPEN, 1 },
     { "SHIELD_BONUS", &SHIELD_BONUS, 1 },
     { "coord_w", coord_w, 5 },
+    { "PLAN_PART", &PLAN_PART, 1 }, { "PLAN_IDLE", &PLAN_IDLE, 1 },
 };
 const int eval_params_n = sizeof(eval_params) / sizeof(eval_params[0]);
 

@@ -36,6 +36,7 @@ typedef enum {
     // All-phase
     STRAT_MATERIAL,
     STRAT_COORDINATION,   // pieces working together (own weight set below)
+    STRAT_GAME_PLAN,      // lookahead prices pieces by their role in the PV
 
     STRAT_COUNT  // Total number of strategies
 } StrategyType;

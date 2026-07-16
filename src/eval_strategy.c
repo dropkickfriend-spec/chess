@@ -498,8 +498,42 @@ const char *strategy_names[STRAT_COUNT] = {
     "DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
     "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE",
     "DEFENDER_LOGISTICS", "KING_ACTIVITY", "PAWN_PROMOTION",
-    "OPPOSITION", "MATERIAL", "COORDINATION"
+    "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN"
 };
+
+extern U64 plan_squares[2];
+extern int PLAN_PART, PLAN_IDLE;
+
+// Strategy: GAME_PLAN — lookahead determines current piece worth. The last
+// completed search depth's principal variation IS the game plan for this
+// exact position; the next iteration's eval matches every piece against it.
+// Participants (standing on their side's plan squares) appreciate by
+// PLAN_PART percent of their material value; developed pieces in nobody's
+// plan are spectators and depreciate by PLAN_IDLE percent. No averages —
+// the plan is recomputed from scratch each search, unique per position.
+static int eval_game_plan(const Board *bd, int phase) {
+    (void)phase;
+    U64 plan_all = plan_squares[WHITE] | plan_squares[BLACK];
+    if (!plan_all) return 0;   // no lookahead yet (depth 1, tune, tooling)
+
+    int score = 0;
+    for (int side = WHITE; side <= BLACK; side++) {
+        int sign = side == WHITE ? 1 : -1;
+        int base = side == WHITE ? WP : BP;
+        for (int pt = 0; pt <= 5; pt++) {
+            int val = pt == 5 ? 350 : material_mg[pt];  // king plans like a minor
+            U64 bb = bd->bb[base + pt];
+            while (bb) {
+                int sq = LSB(bb); POP_BIT(bb, sq);
+                if (plan_squares[side] & (1ULL << sq))
+                    score += sign * val * PLAN_PART / 100;
+                else if (pt >= 1 && pt <= 4 && !(plan_all & (1ULL << sq)))
+                    score -= sign * val * PLAN_IDLE / 100;
+            }
+        }
+    }
+    return score;
+}
 
 extern int coord_w[COORD_N];
 
@@ -615,6 +649,7 @@ static void gather_raw(const Board *bd, int *phase_out, int raw[STRAT_COUNT]) {
     raw[STRAT_OPPOSITION]          = eval_opposition(bd, phase);
     raw[STRAT_PAWN_PROMOTION]      = eval_pawn_promotion(bd, phase);
     raw[STRAT_COORDINATION]        = eval_coordination(bd, phase);
+    raw[STRAT_GAME_PLAN]           = eval_game_plan(bd, phase);
 
     // A queen is worth less when someone is getting mated — yours if the
     // attack is on you, theirs if you can throw it at their king. Material's
@@ -638,6 +673,7 @@ static float weight_mean(const StrategyWeights *w, int phase,
     act[STRAT_PIECE_ACTIVITY]      = 1.0f;
     act[STRAT_DEFENDER_LOGISTICS]  = 1.0f;
     act[STRAT_COORDINATION]        = 1.0f;
+    act[STRAT_GAME_PLAN]           = 1.0f;
     act[STRAT_KING_SAFETY_OPENING] = po;
     act[STRAT_ATTACK_POTENTIAL]    = po;
     act[STRAT_DEVELOPMENT]         = po;

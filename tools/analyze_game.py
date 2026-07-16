@@ -21,7 +21,7 @@ STRATEGIES = [
     "DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
     "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE", "DEFENDER_LOGISTICS",
     "KING_ACTIVITY", "PAWN_PROMOTION", "OPPOSITION",
-    "MATERIAL", "COORDINATION"
+    "MATERIAL", "COORDINATION", "GAME_PLAN"
 ]
 
 PHASE_THRESHOLDS = {
@@ -64,7 +64,7 @@ def trace_strategies(pgn_file, engine_path):
         # Determine which strategies are "active" in this position.
         # Every strategy now has an implementation, so each phase tunes
         # its full set instead of leaving weights frozen at 1.0.
-        active = ["MATERIAL", "COORDINATION"]  # Always active
+        active = ["MATERIAL", "COORDINATION", "GAME_PLAN"]  # Always active
         if phase == "opening":
             active.extend(["DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING"])
         elif phase == "middlegame":

@@ -91,6 +91,10 @@ static int move_stack[MAX_PLY];   // move played at each ply (0 after null)
 static int pv_len[MAX_PLY];
 static int pv_tab[MAX_PLY][MAX_PLY];
 
+// The game plan the eval prices pieces against: squares the last completed
+// iteration's PV fights over, per side. See search.h.
+U64 plan_squares[2] = { 0, 0 };
+
 void search_set_history(const U64 *hashes, int n) {
     if (n > 1024) { hashes += n - 1024; n = 1024; }  // keep the recent tail
     memcpy(hist, hashes, n * sizeof(U64));
@@ -409,6 +413,7 @@ int search_best_move(Board *bd, int movetime_ms, int max_depth) {
     memset(history_tab, 0, sizeof(history_tab));
     hist_len = hist_base;
     hist[hist_len] = board_hash(bd);
+    plan_squares[WHITE] = plan_squares[BLACK] = 0;  // fresh plan per search
 
     long long start = now_ms(), dl = start + movetime_ms;
     deadline.tv_sec = dl / 1000; deadline.tv_nsec = (dl % 1000) * 1000000LL;
@@ -426,6 +431,16 @@ int search_best_move(Board *bd, int movetime_ms, int max_depth) {
         if (stop_search) break;  // partial iteration: keep previous best
         prev_score = score;
         best = pv_tab[0][0];
+
+        // Publish this depth's plan for the next iteration's eval: the
+        // squares each side's part of the line moves through.
+        plan_squares[WHITE] = plan_squares[BLACK] = 0;
+        int mover = bd->side;
+        for (int i = 0; i < pv_len[0]; i++) {
+            plan_squares[mover] |= (1ULL << M_FROM(pv_tab[0][i]))
+                                 | (1ULL << M_TO(pv_tab[0][i]));
+            mover = !mover;
+        }
 
         long long ms = now_ms() - start;
         printf("info depth %d score ", depth);
