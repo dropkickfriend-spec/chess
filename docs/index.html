@@ -653,24 +653,44 @@
             return o;
         }
 
-        function overlayCoord(cells) {
+        function overlayCoord(cells, m) {
+            // Combined coordination: defenders a piece has + friends it
+            // activates, amplified when the piece follows the game plan.
             const occ = new Set();
             cells.forEach((p, s) => { if (p) occ.add(s); });
             const cntW = new Array(64).fill(0), cntB = new Array(64).fill(0);
+            const attMap = {};
             cells.forEach((p, s) => {
                 if (!p) return;
                 const isW = p === p.toUpperCase();
-                for (const t of attacksOf(p.toUpperCase(), s, isW, occ))
-                    (isW ? cntW : cntB)[t]++;
+                const att = attacksOf(p.toUpperCase(), s, isW, occ);
+                attMap[s] = att;
+                for (const t of att) (isW ? cntW : cntB)[t]++;
             });
+            const pw = new Set(m && m.plan ? m.plan.w : []);
+            const pb = new Set(m && m.plan ? m.plan.b : []);
             const o = {};
             cells.forEach((p, s) => {
                 if (!p) return;
                 const isW = p === p.toUpperCase();
-                const d = (isW ? cntW : cntB)[s];
-                o[s] = { text: '+' + d, cls: d > 0 ? 'pos' : 'zero',
-                         tint: d > 0 ? `rgba(0,255,120,${Math.min(0.08 + d * 0.07, 0.45)})` : null,
-                         tip: `defended by ${d} friendly ${d === 1 ? 'piece' : 'pieces'}` };
+                const def = (isW ? cntW : cntB)[s];
+                let act = 0;
+                for (const t of attMap[s] || [])
+                    if (cells[t] && ((cells[t] === cells[t].toUpperCase()) === isW)) act++;
+                const onPlan = (isW ? pw : pb).has(s);
+                const combined = def + act;
+                o[s] = {
+                    text: (onPlan ? '★' : '') + combined,
+                    cls: onPlan ? 'pos' : combined > 0 ? 'pos' : 'zero',
+                    tint: onPlan
+                        ? `rgba(0,212,255,${Math.min(0.18 + combined * 0.05, 0.5)})`
+                        : combined > 0
+                            ? `rgba(0,255,120,${Math.min(0.06 + combined * 0.05, 0.4)})`
+                            : null,
+                    tip: `${def} defender${def === 1 ? '' : 's'}, activates ${act} ` +
+                         `friend${act === 1 ? '' : 's'}` +
+                         (onPlan ? ' — following the game plan (amplified)' : '')
+                };
             });
             return o;
         }
@@ -679,7 +699,7 @@
             if (viewMode === 'squares') return overlaySquares();
             if (viewMode === 'plan')    return overlayPlan(cells, m);
             if (viewMode === 'logi')    return overlayLogi(cells);
-            if (viewMode === 'coord')   return overlayCoord(cells);
+            if (viewMode === 'coord')   return overlayCoord(cells, m);
             return overlayPieces(cells);
         }
         function sqName(sq) { return "abcdefgh"[sq & 7] + ((sq >> 3) + 1); }

@@ -518,14 +518,19 @@ static int eval_game_plan(const Board *bd, int phase) {
 
 extern int coord_w[COORD_N];
 
-// Strategy: COORDINATION — pieces working together, five patterns each
-// priced by its own learnable weight (coord_w, tuned from outcomes):
-//   0 mutual defense: non-pawn pieces covered by a friendly attacker
-//   1 batteries: R/Q doubled on a file, B/Q sharing a live diagonal
-//   2 outposts: N/B on a pawn-guarded square no enemy pawn can ever attack
-//   3 focal pressure: enemy-occupied squares hit by 2+ of our pieces
-//   4 pawn-piece sync: pawn advance squares covered by our own pieces —
-//     a push (like e4) is worth more when the army stands behind it
+// Strategy: COORDINATION — a piece coordinates when it follows the game
+// plan AND is defended AND activates friends. Per piece, one combined
+// score instead of disconnected pattern counters:
+//
+//   base = coord_w[0] * defenders_it_has      (friendly cover of its square)
+//        + coord_w[1] * pieces_it_activates   (own men its attacks support)
+//        + coord_w[2] * battery               (R/Q file, B/Q diagonal)
+//        + coord_w[3] * outpost               (pawn-guarded, unassailable)
+//
+//   plan multiplier: a piece standing on its side's plan squares has its
+//   whole base scaled by (10 + coord_w[4]) / 10 — following the game plan
+//   amplifies everything else the piece contributes. All five weights are
+//   learned from outcomes through the tuning registry.
 static int eval_coordination(const Board *bd, int phase) {
     (void)phase;
     int score = 0;
@@ -533,26 +538,27 @@ static int eval_coordination(const Board *bd, int phase) {
 
     for (int side = WHITE; side <= BLACK; side++) {
         int sign = side == WHITE ? 1 : -1;
-        int base = side == WHITE ? WP : BP;
+        int base_i = side == WHITE ? WP : BP;
         U64 own = bd->occ[side];
-        U64 own_pawns = bd->bb[base];
-        U64 enemy = bd->occ[!side];
+        U64 own_pawns = bd->bb[base_i];
         U64 enemy_pawns = bd->bb[side == WHITE ? BP : WP];
 
+        // First pass: per-square friendly cover and per-piece attack sets
         U64 pawn_cover = 0;
         U64 pb = own_pawns;
         while (pb) {
             int s = LSB(pb); POP_BIT(pb, s);
             pawn_cover |= pawn_attacks[side][s];
         }
-
-        U64 all_att = pawn_cover;      // union of our attack coverage
-        int hits[64] = {0};            // attackers per enemy-occupied square
-        int batteries = 0, outposts = 0;
-
+        int cover[64] = {0};           // friendly attackers per square
+        {
+            U64 pc = pawn_cover;       // pawns contribute cover once each sq
+            while (pc) { int s = LSB(pc); POP_BIT(pc, s); cover[s]++; }
+        }
+        U64 att_of[16]; int sq_of[16], pt_of[16], n_pieces = 0;
         for (int pt = 1; pt <= 5; pt++) {
-            U64 b = bd->bb[base + pt];
-            while (b) {
+            U64 b = bd->bb[base_i + pt];
+            while (b && n_pieces < 16) {
                 int sq = LSB(b); POP_BIT(b, sq);
                 U64 att;
                 switch (pt) {
@@ -562,53 +568,48 @@ static int eval_coordination(const Board *bd, int phase) {
                     case 4: att = get_queen_attacks(sq, occ); break;
                     default: att = king_attacks[sq]; break;
                 }
-                all_att |= att;
-
-                U64 t = att & enemy;
-                while (t) { int e = LSB(t); POP_BIT(t, e); hits[e]++; }
-
-                // Batteries: rook sees own rook/queen down its file;
-                // bishop sees own queen down its diagonal.
-                if (pt == 3 && (get_rook_attacks(sq, occ) & file_mask[sq % 8]
-                                & (bd->bb[base + 3] | bd->bb[base + 4])))
-                    batteries++;
-                if (pt == 2 && (get_bishop_attacks(sq, occ) & bd->bb[base + 4]))
-                    batteries++;
-
-                // Outposts: minor piece on a pawn-guarded square, past the
-                // reach of every enemy pawn on the adjacent files.
-                if ((pt == 1 || pt == 2)
-                    && (pawn_cover & (1ULL << sq))
-                    && !(passed_mask[side][sq] & adj_files[sq % 8] & enemy_pawns)) {
-                    int rel_rank = side == WHITE ? sq / 8 : 7 - sq / 8;
-                    if (rel_rank >= 3 && rel_rank <= 5) outposts++;
-                }
+                att_of[n_pieces] = att;
+                sq_of[n_pieces] = sq;
+                pt_of[n_pieces] = pt;
+                n_pieces++;
+                U64 t = att;
+                while (t) { int s = LSB(t); POP_BIT(t, s); cover[s]++; }
             }
         }
 
-        int mutual = COUNT(all_att & own & ~own_pawns);
+        // Second pass: combined per-piece coordination
+        for (int i = 0; i < n_pieces; i++) {
+            int sq = sq_of[i], pt = pt_of[i];
 
-        int focal = 0;
-        U64 e = enemy;
-        while (e) {
-            int s = LSB(e); POP_BIT(e, s);
-            if (hits[s] > 1) focal += hits[s] - 1;
+            int defenders = cover[sq];   // own square never in own attack set
+            int activates = COUNT(att_of[i] & own & ~(1ULL << sq));
+
+            int battery = 0;
+            if (pt == 3 && (att_of[i] & file_mask[sq % 8]
+                            & (bd->bb[base_i + 3] | bd->bb[base_i + 4])))
+                battery = 1;
+            if (pt == 2 && (att_of[i] & bd->bb[base_i + 4]))
+                battery = 1;
+
+            int outpost = 0;
+            if ((pt == 1 || pt == 2)
+                && (pawn_cover & (1ULL << sq))
+                && !(passed_mask[side][sq] & adj_files[sq % 8] & enemy_pawns)) {
+                int rel_rank = side == WHITE ? sq / 8 : 7 - sq / 8;
+                if (rel_rank >= 3 && rel_rank <= 5) outpost = 1;
+            }
+
+            int piece_base = coord_w[0] * defenders
+                           + coord_w[1] * activates
+                           + coord_w[2] * battery
+                           + coord_w[3] * outpost;
+
+            // Following the plan amplifies the piece's whole contribution
+            if (plan_squares[side] & (1ULL << sq))
+                piece_base = piece_base * (10 + coord_w[4]) / 10;
+
+            score += sign * piece_base;
         }
-
-        int pawn_sync = 0;
-        pb = own_pawns;
-        while (pb) {
-            int s = LSB(pb); POP_BIT(pb, s);
-            int front = side == WHITE ? s + 8 : s - 8;
-            if (front >= 0 && front < 64 && (all_att & (1ULL << front)))
-                pawn_sync++;
-        }
-
-        score += sign * (coord_w[0] * mutual
-                       + coord_w[1] * batteries
-                       + coord_w[2] * outposts
-                       + coord_w[3] * focal
-                       + coord_w[4] * pawn_sync);
     }
 
     return score;
