@@ -120,24 +120,29 @@ def main():
                     help="store results in Supabase (needs SUPABASE_URL/SUPABASE_KEY)")
     args = ap.parse_args()
 
-    ours = chess.engine.SimpleEngine.popen_uci(args.engine)
-    sf = chess.engine.SimpleEngine.popen_uci(args.stockfish)
-    sf_desc = "Stockfish"
-    if args.skill is not None:
-        sf.configure({"Skill Level": args.skill})
-        sf_desc += f" (skill {args.skill})"
-    if args.elo is not None:
-        sf.configure({"UCI_LimitStrength": True, "UCI_Elo": args.elo})
-        sf_desc += f" (elo {args.elo})"
-
     pgn_out = open(args.pgn, "w") if args.pgn else None
     wins = draws = losses = 0
     played = []
     try:
         for g in range(args.games):
+            # Create fresh engine instances for each game to avoid TT pollution
+            ours = chess.engine.SimpleEngine.popen_uci(args.engine)
+            sf = chess.engine.SimpleEngine.popen_uci(args.stockfish)
+            sf_desc = "Stockfish"
+            if args.skill is not None:
+                sf.configure({"Skill Level": args.skill})
+                sf_desc += f" (skill {args.skill})"
+            if args.elo is not None:
+                sf.configure({"UCI_LimitStrength": True, "UCI_Elo": args.elo})
+                sf_desc += f" (elo {args.elo})"
+
             we_are_white = g % 2 == 0
             white, black = (ours, sf) if we_are_white else (sf, ours)
             board = play_game(white, black, args.movetime)
+
+            # Quit engines to reset state for next game
+            ours.quit()
+            sf.quit()
 
             # Incomplete games (engine crash, timeout) shouldn't be recorded
             if not board.is_game_over():
@@ -183,8 +188,6 @@ def main():
                 print(game, file=pgn_out, flush=True)
                 print(file=pgn_out)
     finally:
-        ours.quit()
-        sf.quit()
         if pgn_out:
             pgn_out.close()
 
