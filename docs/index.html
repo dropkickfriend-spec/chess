@@ -339,11 +339,95 @@
             }));
         }
 
+        // Live games: uploaded UCI move lists replayed client-side, so every
+        // game is viewable on the board within a minute of finishing.
+        function applyUci(cells, uci) {
+            const files = 'abcdefgh';
+            const from = files.indexOf(uci[0]) + (+uci[1] - 1) * 8;
+            const to = files.indexOf(uci[2]) + (+uci[3] - 1) * 8;
+            const promo = uci[4];
+            const p = cells[from];
+            if (!p) return null;
+            const isW = p === p.toUpperCase(), P = p.toUpperCase();
+            let captured = cells[to];
+            if (P === 'P' && !captured && (from & 7) !== (to & 7)) {
+                const capSq = to + (isW ? -8 : 8);           // en passant
+                captured = cells[capSq];
+                cells[capSq] = null;
+            }
+            cells[to] = promo ? (isW ? promo.toUpperCase() : promo.toLowerCase()) : p;
+            cells[from] = null;
+            if (P === 'K' && Math.abs((to & 7) - (from & 7)) === 2) {
+                const rank = from & 56;                       // castling rook hop
+                if ((to & 7) === 6) { cells[rank + 5] = cells[rank + 7]; cells[rank + 7] = null; }
+                else { cells[rank + 3] = cells[rank]; cells[rank] = null; }
+            }
+            return { p, P, isW, from, to, captured, promo };
+        }
+        function cellsToFen(cells) {
+            const rows = [];
+            for (let r = 7; r >= 0; r--) {
+                let row = '', empty = 0;
+                for (let f = 0; f < 8; f++) {
+                    const p = cells[r * 8 + f];
+                    if (!p) empty++;
+                    else { if (empty) { row += empty; empty = 0; } row += p; }
+                }
+                if (empty) row += empty;
+                rows.push(row);
+            }
+            return rows.join('/') + ' w - - 0 1';
+        }
+        function buildLiveGame(row) {
+            const cells = fenBoard(START_FEN);
+            const moves = [];
+            for (const uci of (row.uci || '').split(' ')) {
+                if (uci.length < 4) continue;
+                const a = applyUci(cells, uci);
+                if (!a) break;
+                const endL = a.promo ? (a.isW ? a.promo.toUpperCase() : a.promo.toLowerCase()) : a.p;
+                const endP = endL.toUpperCase();
+                const pvF = pieceValues(a.p, a.from), pvT = pieceValues(endL, a.to);
+                const rec = {
+                    san: uci, uci, piece: a.P, color: a.isW ? 'w' : 'b',
+                    mat: [matMg(endP), matEg(endP)],
+                    pst_from: [pvF.pstMg, pvF.pstEg],
+                    pst_to: [pvT.pstMg, pvT.pstEg],
+                    pst_delta: [pvT.pstMg - pvF.pstMg, pvT.pstEg - pvF.pstEg],
+                    fen: cellsToFen(cells)
+                };
+                if (a.captured) {
+                    rec.captured = a.captured.toUpperCase();
+                    rec.cap_value = matMg(a.captured.toUpperCase());
+                }
+                if (a.promo) rec.promo = a.promo.toUpperCase();
+                moves.push(rec);
+            }
+            const us = 'chess-bb', them = 'Stockfish (skill 20)';
+            return {
+                white: row.our_color === 'white' ? us : them,
+                black: row.our_color === 'white' ? them : us,
+                result: row.result, live: true,
+                date: (row.created_at || '').slice(0, 16).replace('T', ' '),
+                moves
+            };
+        }
+        async function fetchLiveGames() {
+            const rows = await fetchJSON(
+                `${SUPABASE_URL}/rest/v1/chessbb_games` +
+                `?select=our_color,result,uci,created_at&uci=not.is.null&order=id.desc&limit=20`,
+                { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
+            if (!rows) return null;
+            return rows.map(buildLiveGame).filter(g => g.moves.length);
+        }
+
         async function loadData() {
             const matches = await fetchLiveMatches()
                          || await fetchJSON('data/matches.json') || [];
             const weightsFile = await fetchJSON('data/weights.json') || {};
-            const games = await fetchJSON('data/games.json') || [];
+            const snapGames = await fetchJSON('data/games.json') || [];
+            const liveGames = await fetchLiveGames() || [];
+            const games = [...liveGames, ...snapGames];
             LT = await fetchJSON('data/learned_values.json') || LT;
 
             let history = await fetchWeightHistory();
@@ -358,7 +442,7 @@
             updateStats(matches);
             updateWeights(current);
             drawLegend();
-            drawHistory(history);
+            drawHistory(history.slice(-100));   // recent window so live points visibly move
             updateMatchTable(matches);
             initViewer(games);
             document.getElementById('timestamp').textContent = new Date().toLocaleString();
@@ -811,7 +895,7 @@
             GAMES = games;
             const sel = document.getElementById('gameSel');
             sel.innerHTML = games.map((g, i) =>
-                `<option value="${i}">#${i + 1} · ${g.white} vs ${g.black} · ${g.result} · ${g.moves.length} plies · ${g.date}</option>`).join('');
+                `<option value="${i}">${g.live ? '🔴 LIVE ' : ''}#${i + 1} · ${g.white} vs ${g.black} · ${g.result} · ${g.moves.length} plies · ${g.date}</option>`).join('');
             if (!games.length) {
                 sel.innerHTML = '<option>No games exported yet</option>';
                 renderBoard(START_FEN);

@@ -97,6 +97,7 @@ def upload_match(sf_skill, sf_elo, movetime, wins, draws, losses, games):
         "outcome": g["outcome"],
         "moves": g["moves"],
         "pgn": g["pgn"],
+        "uci": g.get("uci"),
     } for g in games])
     print(f"uploaded match {match_id} ({len(games)} games) to Supabase")
 
@@ -194,6 +195,7 @@ def main():
                 "outcome": outcome,
                 "moves": board.fullmove_number,
                 "pgn": str(game),
+                "uci": " ".join(m.uci() for m in board.move_stack),
             })
             if pgn_out:
                 print(game, file=pgn_out, flush=True)
