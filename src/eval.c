@@ -126,6 +126,11 @@ int PLAN_IDLE = 4;
 // gain this percent of activity in the weight budget (learned, one knob).
 int PLAN_ENGAGE = 50;
 
+// Plan-relative logistics: blockage of a piece the game plan uses (or of
+// squares on the plan's routes) costs (10 + LOGI_PLAN)/10 times baseline.
+// Learned through the registry; seed makes plan blockage double price.
+int LOGI_PLAN = 10;
+
 // Certainty pricing: learned piece values are allowed to stay inflated —
 // they are the piece's worth at FULL plan execution. Material realises
 // CERT_FLOOR percent of it when the plan is contested, scaling linearly
@@ -165,6 +170,7 @@ const ParamBlock eval_params[] = {
     { "coord_w", coord_w, 5 },
     { "PLAN_PART", &PLAN_PART, 1 }, { "PLAN_IDLE", &PLAN_IDLE, 1 },
     { "PLAN_ENGAGE", &PLAN_ENGAGE, 1 }, { "CERT_FLOOR", &CERT_FLOOR, 1 },
+    { "LOGI_PLAN", &LOGI_PLAN, 1 },
 };
 const int eval_params_n = sizeof(eval_params) / sizeof(eval_params[0]);
 
