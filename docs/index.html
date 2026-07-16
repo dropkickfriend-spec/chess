@@ -13,10 +13,7 @@
             min-height: 100vh;
             padding: 20px;
         }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
+        .container { max-width: 1200px; margin: 0 auto; }
         h1 {
             text-align: center;
             margin-bottom: 30px;
@@ -34,11 +31,7 @@
             margin-bottom: 20px;
             backdrop-filter: blur(10px);
         }
-        h2 {
-            color: #00d4ff;
-            margin-bottom: 15px;
-            font-size: 1.5em;
-        }
+        h2 { color: #00d4ff; margin-bottom: 15px; font-size: 1.5em; }
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -52,16 +45,8 @@
             padding: 15px;
             text-align: center;
         }
-        .stat-value {
-            font-size: 2em;
-            font-weight: bold;
-            color: #00d4ff;
-        }
-        .stat-label {
-            color: #b0b0b0;
-            font-size: 0.9em;
-            margin-top: 5px;
-        }
+        .stat-value { font-size: 2em; font-weight: bold; color: #00d4ff; }
+        .stat-label { color: #b0b0b0; font-size: 0.9em; margin-top: 5px; }
         .strategy-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -73,66 +58,95 @@
             padding: 12px;
             border-radius: 4px;
         }
-        .strategy-name {
-            font-weight: bold;
-            color: #00d4ff;
-            font-size: 0.9em;
-        }
-        .strategy-value {
-            color: #ffffff;
-            font-size: 1.3em;
-            margin-top: 5px;
-        }
+        .strategy-name { font-weight: bold; color: #00d4ff; font-size: 0.9em; }
+        .strategy-value { color: #ffffff; font-size: 1.3em; margin-top: 5px; }
         .progress-bar {
-            width: 100%;
-            height: 8px;
+            width: 100%; height: 8px;
             background: rgba(0, 212, 255, 0.1);
-            border-radius: 4px;
-            overflow: hidden;
-            margin-top: 8px;
+            border-radius: 4px; overflow: hidden; margin-top: 8px;
         }
         .progress-fill {
             height: 100%;
             background: linear-gradient(90deg, #00d4ff, #0099ff);
-            width: 50%;
-            border-radius: 4px;
+            width: 50%; border-radius: 4px;
         }
-        .match-history {
-            overflow-x: auto;
+        .legend {
+            display: flex; flex-wrap: wrap; gap: 10px 18px;
+            margin: 10px 0 18px; font-size: 0.85em; color: #c0c0c0;
         }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
+        .legend span { display: inline-flex; align-items: center; gap: 6px; }
+        .legend i {
+            width: 14px; height: 4px; border-radius: 2px; display: inline-block;
         }
+        .match-history { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td {
-            padding: 12px;
-            text-align: left;
+            padding: 12px; text-align: left;
             border-bottom: 1px solid rgba(0, 212, 255, 0.2);
         }
-        th {
-            background: rgba(0, 212, 255, 0.1);
-            color: #00d4ff;
-            font-weight: bold;
-        }
-        tr:hover {
-            background: rgba(0, 212, 255, 0.05);
-        }
-        .win { color: #00ff00; }
-        .loss { color: #ff4444; }
-        .draw { color: #ffaa00; }
+        th { background: rgba(0, 212, 255, 0.1); color: #00d4ff; font-weight: bold; }
+        tr:hover { background: rgba(0, 212, 255, 0.05); }
+        .win { color: #00ff00; } .loss { color: #ff4444; } .draw { color: #ffaa00; }
         .footer {
-            text-align: center;
-            color: #666;
-            font-size: 0.9em;
-            margin-top: 40px;
-            padding-top: 20px;
+            text-align: center; color: #666; font-size: 0.9em;
+            margin-top: 40px; padding-top: 20px;
             border-top: 1px solid rgba(0, 212, 255, 0.2);
         }
-        canvas {
-            max-width: 100%;
-            height: auto;
+        canvas { max-width: 100%; height: auto; }
+
+        /* ---- game viewer ---- */
+        .viewer {
+            display: grid;
+            grid-template-columns: minmax(280px, 440px) minmax(220px, 1fr);
+            gap: 20px;
         }
+        @media (max-width: 760px) { .viewer { grid-template-columns: 1fr; } }
+        .board {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            width: 100%; max-width: 440px;
+            border: 2px solid rgba(0, 212, 255, 0.5);
+            border-radius: 4px; overflow: hidden;
+            user-select: none;
+        }
+        .sq {
+            aspect-ratio: 1; display: flex;
+            align-items: center; justify-content: center;
+            font-size: clamp(20px, 4.2vw, 36px); line-height: 1;
+        }
+        .sq.light { background: #4a5a80; }
+        .sq.dark  { background: #2e3a5c; }
+        .sq.hl-from { box-shadow: inset 0 0 0 3px #ffaa00; }
+        .sq.hl-to   { box-shadow: inset 0 0 0 3px #00ff88; }
+        .controls { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+        .controls button, select#gameSel {
+            background: rgba(0, 212, 255, 0.15);
+            color: #e0e0e0; border: 1px solid rgba(0, 212, 255, 0.5);
+            border-radius: 6px; padding: 8px 14px; font-size: 0.95em;
+            cursor: pointer;
+        }
+        .controls button:hover { background: rgba(0, 212, 255, 0.35); }
+        select#gameSel { width: 100%; margin-bottom: 12px; }
+        .movelist {
+            max-height: 330px; overflow-y: auto;
+            border: 1px solid rgba(0, 212, 255, 0.25); border-radius: 6px;
+            padding: 8px; font-family: Consolas, monospace; font-size: 0.95em;
+            display: grid; grid-template-columns: 3em 1fr 1fr; gap: 2px 8px;
+            align-content: start;
+        }
+        .movelist .num { color: #667; }
+        .movelist .mv { cursor: pointer; padding: 1px 6px; border-radius: 4px; }
+        .movelist .mv:hover { background: rgba(0, 212, 255, 0.2); }
+        .movelist .mv.sel { background: rgba(0, 212, 255, 0.45); color: #fff; }
+        .valpanel {
+            margin-top: 14px;
+            background: rgba(0, 100, 150, 0.2);
+            border-left: 4px solid #00d4ff;
+            border-radius: 4px; padding: 12px 14px;
+            font-size: 0.95em; line-height: 1.7;
+        }
+        .valpanel b { color: #00d4ff; }
+        .valpanel .pos { color: #00ff88; } .valpanel .neg { color: #ff6666; }
     </style>
 </head>
 <body>
@@ -142,30 +156,35 @@
         <div class="section">
             <h2>Match Performance vs Stockfish</h2>
             <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-value" id="wins">0</div>
-                    <div class="stat-label">Wins</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="draws">0</div>
-                    <div class="stat-label">Draws</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="losses">0</div>
-                    <div class="stat-label">Losses</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="score">0%</div>
-                    <div class="stat-label">Score</div>
-                </div>
+                <div class="stat-card"><div class="stat-value" id="wins">0</div><div class="stat-label">Wins</div></div>
+                <div class="stat-card"><div class="stat-value" id="draws">0</div><div class="stat-label">Draws</div></div>
+                <div class="stat-card"><div class="stat-value" id="losses">0</div><div class="stat-label">Losses</div></div>
+                <div class="stat-card"><div class="stat-value" id="score">0%</div><div class="stat-label">Score</div></div>
             </div>
         </div>
 
         <div class="section">
             <h2>Strategy Weights (Self-Tuning)</h2>
-            <canvas id="weightChart" width="1100" height="260" style="width: 100%; margin-bottom: 15px;"></canvas>
-            <div class="strategy-grid" id="weightsContainer">
-                <!-- Dynamically populated -->
+            <div class="legend" id="chartLegend"></div>
+            <canvas id="weightChart" width="1100" height="280" style="width: 100%; margin-bottom: 15px;"></canvas>
+            <div class="strategy-grid" id="weightsContainer"></div>
+        </div>
+
+        <div class="section">
+            <h2>Game Viewer — per-move piece &amp; square values</h2>
+            <select id="gameSel"></select>
+            <div class="viewer">
+                <div>
+                    <div class="board" id="board"></div>
+                    <div class="controls">
+                        <button id="btnStart">⏮ Start</button>
+                        <button id="btnPrev">◀ Prev</button>
+                        <button id="btnNext">Next ▶</button>
+                        <button id="btnEnd">End ⏭</button>
+                    </div>
+                    <div class="valpanel" id="valPanel">Select a move to see its piece and square values.</div>
+                </div>
+                <div class="movelist" id="moveList"></div>
             </div>
         </div>
 
@@ -173,18 +192,8 @@
             <h2>Recent Matches</h2>
             <div class="match-history">
                 <table>
-                    <thead>
-                        <tr>
-                            <th>Match</th>
-                            <th>Color</th>
-                            <th>Result</th>
-                            <th>Moves</th>
-                            <th>Date</th>
-                        </tr>
-                    </thead>
-                    <tbody id="matchTable">
-                        <!-- Dynamically populated -->
-                    </tbody>
+                    <thead><tr><th>Match</th><th>Color</th><th>Result</th><th>Moves</th><th>Date</th></tr></thead>
+                    <tbody id="matchTable"></tbody>
                 </table>
             </div>
         </div>
@@ -193,88 +202,136 @@
             <h2>Architecture</h2>
             <p style="line-height: 1.6; margin-bottom: 10px;">
                 <strong>chess-bb</strong> is a bitboard-based UCI chess engine with a self-tuning evaluation function.
-                Key features:
             </p>
             <ul style="margin-left: 20px; line-height: 1.8;">
-                <li><strong>Strategy-Based Evaluation:</strong> 11 independent evaluation strategies covering opening, middlegame, and endgame phases</li>
-                <li><strong>Self-Learning:</strong> After each game, strategy weights adjust based on outcome (1.02× for wins, 0.98× for losses)</li>
-                <li><strong>Tapered Scoring:</strong> Midgame/endgame blend based on remaining material (smooth king transition)</li>
-                <li><strong>Alpha-Beta Search:</strong> Transposition table, null-move pruning, late-move reduction, history heuristic</li>
-                <li><strong>Weight Persistence:</strong> Learned weights saved to disk and loaded on engine startup</li>
+                <li><strong>Strategy-Based Evaluation:</strong> 11 strategies competing for a fixed per-move evaluation budget (relative reweighting — only ratios matter)</li>
+                <li><strong>Self-Learning:</strong> surprise-driven, zero-sum weight updates after each game; square/piece values relearned from the permanent game log via Texel tuning</li>
+                <li><strong>Mate dominance:</strong> eval clamped so no learned bonus outranks a search mate score; material discounts itself under king danger</li>
+                <li><strong>Search:</strong> alpha-beta with transposition table, null-move pruning, LMR, history heuristic</li>
+                <li><strong>Persistence:</strong> weights stored locally and in Supabase; the chart pulls the full learning history live</li>
             </ul>
         </div>
 
         <div class="footer">
-            <p>Live dashboard for chess-bb self-play experiments. Data updates automatically from game results and weight files.</p>
+            <p>Live dashboard for chess-bb self-play experiments.</p>
             <p style="margin-top: 10px; color: #444;">Last updated: <span id="timestamp">--</span></p>
         </div>
     </div>
 
     <script>
         const STRATEGY_NAMES = [
-            "DEVELOPMENT",
-            "CENTER_CONTROL",
-            "KING_SAFETY_OPENING",
-            "PIECE_ACTIVITY",
-            "ATTACK_POTENTIAL",
-            "PAWN_STRUCTURE",
-            "DEFENDER_LOGISTICS",
-            "KING_ACTIVITY",
-            "PAWN_PROMOTION",
-            "OPPOSITION",
-            "MATERIAL"
+            "DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
+            "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE",
+            "DEFENDER_LOGISTICS", "KING_ACTIVITY", "PAWN_PROMOTION",
+            "OPPOSITION", "MATERIAL"
         ];
-
         const STRATEGY_COLORS = [
-            "#FF6B6B", "#4ECDC4", "#45B7D1",
-            "#FFA07A", "#98D8C8", "#F7DC6F",
-            "#BB8FCE", "#85C1E2", "#F8B739",
-            "#52C9A3", "#FF6B9D"
+            "#FF6B6B", "#4ECDC4", "#45B7D1", "#FFA07A", "#98D8C8",
+            "#F7DC6F", "#BB8FCE", "#85C1E2", "#F8B739", "#52C9A3", "#FF6B9D"
         ];
 
-        // Load data from JSON files (served by GitHub Pages)
-        async function loadData() {
+        // Read-only anon key (RLS: select on weight tables, append-only elsewhere)
+        const SUPABASE_URL = "https://ujqngoliwxquosickvza.supabase.co";
+        const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqcW5nb2xpd3hxdW9zaWNrdnphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwNjQ1NTYsImV4cCI6MjA5MzY0MDU1Nn0.AbK1tLbghKQwXCg779zoyaE7qZ3yXItfktQWVy5YigA";
+
+        async function fetchJSON(url, opts) {
             try {
-                // Try to load match history
-                const matchResponse = await fetch('data/matches.json');
-                const matches = matchResponse.ok ? await matchResponse.json() : [];
-
-                // Try to load strategy weights
-                const weightsResponse = await fetch('data/weights.json');
-                const weights = weightsResponse.ok ? await weightsResponse.json() : {};
-
-                updateDashboard(matches, weights);
-            } catch (error) {
-                console.log("Data files not available yet. Dashboard will update when games complete.");
-                showPlaceholder();
-            }
+                const r = await fetch(url, opts);
+                return r.ok ? await r.json() : null;
+            } catch { return null; }
         }
 
-        function updateDashboard(matches, weights) {
-            // weights.json is {current: [...], history: [[...], ...]};
-            // a bare array (legacy shape) is treated as current-only.
-            const current = Array.isArray(weights) ? weights : (weights.current || []);
-            const history = Array.isArray(weights) ? [] : (weights.history || []);
+        // Full weight-learning history: every game logs 11 rows (one per
+        // strategy); consecutive 11-row blocks are snapshots in time order.
+        async function fetchWeightHistory() {
+            const rows = await fetchJSON(
+                `${SUPABASE_URL}/rest/v1/strategy_weights?select=strategy_idx,weight&order=id.asc&limit=11000`,
+                { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
+            if (!rows || rows.length < 11) return null;
+            const snaps = [];
+            for (let i = 0; i + 11 <= rows.length; i += 11) {
+                const snap = new Array(11).fill(1.0);
+                for (let j = 0; j < 11; j++)
+                    snap[rows[i + j].strategy_idx] = rows[i + j].weight;
+                snaps.push(snap);
+            }
+            return snaps;
+        }
+
+        async function loadData() {
+            const matches = await fetchJSON('data/matches.json') || [];
+            const weightsFile = await fetchJSON('data/weights.json') || {};
+            const games = await fetchJSON('data/games.json') || [];
+
+            let history = await fetchWeightHistory();
+            let current = weightsFile.current || [];
+            if (history && history.length) {
+                history = [new Array(11).fill(1.0), ...history];  // start at defaults
+                current = history[history.length - 1];
+            } else {
+                history = weightsFile.history || [];
+            }
 
             updateStats(matches);
             updateWeights(current);
+            drawLegend();
             drawHistory(history);
             updateMatchTable(matches);
-            updateTimestamp();
+            initViewer(games);
+            document.getElementById('timestamp').textContent = new Date().toLocaleString();
+        }
+
+        function updateStats(matches) {
+            let wins = 0, draws = 0, losses = 0;
+            matches.forEach(m => {
+                const weWon = (m.result === "1-0" && m.our_color === "white") ||
+                              (m.result === "0-1" && m.our_color === "black");
+                if (m.result === "1/2-1/2") draws++;
+                else if (weWon) wins++;
+                else losses++;
+            });
+            const total = wins + draws + losses;
+            const score = total ? ((wins + draws / 2) / total * 100).toFixed(1) : 0;
+            wins_el.textContent = wins; draws_el.textContent = draws;
+            losses_el.textContent = losses; score_el.textContent = score + '%';
+        }
+        const wins_el = document.getElementById('wins'), draws_el = document.getElementById('draws'),
+              losses_el = document.getElementById('losses'), score_el = document.getElementById('score');
+
+        function updateWeights(current) {
+            const container = document.getElementById('weightsContainer');
+            container.innerHTML = '';
+            STRATEGY_NAMES.forEach((name, i) => {
+                const value = current[i] !== undefined ? current[i] : 1.0;
+                const normalized = Math.min(value / 2, 1);
+                const card = document.createElement('div');
+                card.className = 'strategy-card';
+                card.style.borderLeftColor = STRATEGY_COLORS[i];
+                card.innerHTML = `
+                    <div class="strategy-name" style="color:${STRATEGY_COLORS[i]}">${name}</div>
+                    <div class="strategy-value">${value.toFixed(3)}</div>
+                    <div class="progress-bar"><div class="progress-fill" style="width:${normalized * 100}%;background:${STRATEGY_COLORS[i]}"></div></div>`;
+                container.appendChild(card);
+            });
+        }
+
+        function drawLegend() {
+            const el = document.getElementById('chartLegend');
+            el.innerHTML = STRATEGY_NAMES.map((n, i) =>
+                `<span><i style="background:${STRATEGY_COLORS[i]}"></i>${n}</span>`).join('');
         }
 
         function drawHistory(history) {
             const canvas = document.getElementById('weightChart');
             if (!canvas || history.length < 2) return;
             const ctx = canvas.getContext('2d');
-            const W = canvas.width, H = canvas.height, pad = 30;
+            const W = canvas.width, H = canvas.height, pad = 34;
             ctx.clearRect(0, 0, W, H);
 
             const maxW = Math.max(...history.flat(), 1.5);
             const x = i => pad + i * (W - 2 * pad) / (history.length - 1);
             const y = v => H - pad - (v / maxW) * (H - 2 * pad);
 
-            // baseline at weight = 1.0
             ctx.strokeStyle = 'rgba(255,255,255,0.2)';
             ctx.setLineDash([4, 4]);
             ctx.beginPath(); ctx.moveTo(pad, y(1)); ctx.lineTo(W - pad, y(1)); ctx.stroke();
@@ -293,95 +350,133 @@
 
             ctx.fillStyle = '#b0b0b0';
             ctx.font = '12px sans-serif';
-            ctx.fillText('game 0', pad, H - 8);
-            ctx.fillText('game ' + (history.length - 1), W - pad - 45, H - 8);
+            ctx.fillText('game 0', pad, H - 10);
+            ctx.fillText('game ' + (history.length - 1), W - pad - 50, H - 10);
             ctx.fillText(maxW.toFixed(1) + 'x', 4, pad);
             ctx.fillText('1.0x', 4, y(1) + 4);
-        }
-
-        function updateStats(matches) {
-            let wins = 0, draws = 0, losses = 0;
-
-            matches.forEach(m => {
-                const weWon = (m.result === "1-0" && m.our_color === "white") ||
-                              (m.result === "0-1" && m.our_color === "black");
-                if (m.result === "1/2-1/2") draws++;
-                else if (weWon) wins++;
-                else losses++;
-            });
-
-            const total = wins + draws + losses;
-            const score = total > 0 ? ((wins + draws / 2) / total * 100).toFixed(1) : 0;
-
-            document.getElementById('wins').textContent = wins;
-            document.getElementById('draws').textContent = draws;
-            document.getElementById('losses').textContent = losses;
-            document.getElementById('score').textContent = score + '%';
-        }
-
-        function updateWeights(weights) {
-            const container = document.getElementById('weightsContainer');
-            container.innerHTML = '';
-
-            STRATEGY_NAMES.forEach((name, i) => {
-                const value = weights[i] || 1.0;
-                const normalized = Math.min(value / 2, 1); // Cap visual at 2.0 for display
-
-                const card = document.createElement('div');
-                card.className = 'strategy-card';
-                card.innerHTML = `
-                    <div class="strategy-name">${name}</div>
-                    <div class="strategy-value">${value.toFixed(3)}</div>
-                    <div class="progress-bar">
-                        <div class="progress-fill" style="width: ${normalized * 100}%"></div>
-                    </div>
-                `;
-                container.appendChild(card);
-            });
         }
 
         function updateMatchTable(matches) {
             const tbody = document.getElementById('matchTable');
             tbody.innerHTML = '';
-
-            const recent = matches.slice(-10).reverse();
-            recent.forEach((match, i) => {
-                const resultClass = match.result === "1-0" ? (match.our_color === "white" ? "win" : "loss") :
-                                   match.result === "0-1" ? (match.our_color === "black" ? "win" : "loss") :
-                                   "draw";
-                const resultText = match.result === "1/2-1/2" ? "Draw" : match.result;
-
-                const row = `
-                    <tr>
-                        <td>Match ${matches.length - i}</td>
-                        <td>${match.our_color.charAt(0).toUpperCase() + match.our_color.slice(1)}</td>
-                        <td class="${resultClass}">${resultText}</td>
-                        <td>${match.moves}</td>
-                        <td>${match.date || '--'}</td>
-                    </tr>
-                `;
-                tbody.insertAdjacentHTML('beforeend', row);
+            matches.slice().reverse().forEach((m, i) => {
+                const weWon = (m.result === "1-0" && m.our_color === "white") ||
+                              (m.result === "0-1" && m.our_color === "black");
+                const cls = m.result === "1/2-1/2" ? "draw" : weWon ? "win" : "loss";
+                const txt = m.result === "1/2-1/2" ? "Draw" : m.result;
+                tbody.insertAdjacentHTML('beforeend', `
+                    <tr><td>Match ${matches.length - i}</td>
+                    <td>${m.our_color[0].toUpperCase() + m.our_color.slice(1)}</td>
+                    <td class="${cls}">${txt}</td><td>${m.moves}</td><td>${m.date || '--'}</td></tr>`);
             });
         }
 
-        function updateTimestamp() {
-            document.getElementById('timestamp').textContent = new Date().toLocaleString();
+        // ---------------- game viewer ----------------
+        const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        const GLYPH = { K:"♔",Q:"♕",R:"♖",B:"♗",N:"♘",P:"♙",
+                        k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟" };
+        const PIECE_NAME = { P:"pawn", N:"knight", B:"bishop", R:"rook", Q:"queen", K:"king" };
+        let GAMES = [], curGame = 0, curPly = -1;
+
+        function renderBoard(fen, hlFrom, hlTo) {
+            const board = document.getElementById('board');
+            board.innerHTML = '';
+            const ranks = fen.split(' ')[0].split('/');
+            ranks.forEach((rank, r) => {
+                let f = 0;
+                for (const ch of rank) {
+                    if (/\d/.test(ch)) {
+                        for (let i = 0; i < +ch; i++) addSq(board, r, f++, '');
+                    } else addSq(board, r, f++, GLYPH[ch] || '');
+                }
+            });
+            function addSq(board, r, f, glyph) {
+                const sqName = "abcdefgh"[f] + (8 - r);
+                const d = document.createElement('div');
+                d.className = 'sq ' + (((r + f) % 2) ? 'dark' : 'light');
+                if (sqName === hlFrom) d.classList.add('hl-from');
+                if (sqName === hlTo) d.classList.add('hl-to');
+                d.textContent = glyph;
+                board.appendChild(d);
+            }
         }
 
-        function showPlaceholder() {
-            // Show demo data while waiting for real data
-            const demoMatches = [
-                { result: "0-1", our_color: "white", moves: 42, date: "2026-07-16" },
-                { result: "1/2-1/2", our_color: "black", moves: 58, date: "2026-07-15" }
-            ];
-            const demoWeights = [1.0, 1.0, 1.8, 0.9, 1.0, 0.9, 1.0, 1.0, 0.42, 1.0, 0.685];
-            updateDashboard(demoMatches, demoWeights);
+        function initViewer(games) {
+            GAMES = games;
+            const sel = document.getElementById('gameSel');
+            sel.innerHTML = games.map((g, i) =>
+                `<option value="${i}">#${i + 1} · ${g.white} vs ${g.black} · ${g.result} · ${g.moves.length} plies · ${g.date}</option>`).join('');
+            if (!games.length) {
+                sel.innerHTML = '<option>No games exported yet</option>';
+                renderBoard(START_FEN);
+                return;
+            }
+            sel.onchange = () => selectGame(+sel.value);
+            document.getElementById('btnStart').onclick = () => setPly(-1);
+            document.getElementById('btnPrev').onclick = () => setPly(curPly - 1);
+            document.getElementById('btnNext').onclick = () => setPly(curPly + 1);
+            document.getElementById('btnEnd').onclick = () =>
+                setPly(GAMES[curGame].moves.length - 1);
+            document.addEventListener('keydown', e => {
+                if (e.key === 'ArrowLeft') setPly(curPly - 1);
+                if (e.key === 'ArrowRight') setPly(curPly + 1);
+            });
+            selectGame(0);
         }
 
-        // Auto-refresh every 30 seconds
-        setInterval(loadData, 30000);
+        function selectGame(i) {
+            curGame = i;
+            const g = GAMES[i];
+            const list = document.getElementById('moveList');
+            list.innerHTML = '';
+            for (let p = 0; p < g.moves.length; p += 2) {
+                list.insertAdjacentHTML('beforeend',
+                    `<span class="num">${p / 2 + 1}.</span>` +
+                    `<span class="mv" data-ply="${p}">${g.moves[p].san}</span>` +
+                    (g.moves[p + 1] ? `<span class="mv" data-ply="${p + 1}">${g.moves[p + 1].san}</span>` : `<span></span>`));
+            }
+            list.querySelectorAll('.mv').forEach(el =>
+                el.onclick = () => setPly(+el.dataset.ply));
+            setPly(-1);
+        }
 
-        // Initial load
+        function fmt(v) {
+            const cls = v > 0 ? 'pos' : v < 0 ? 'neg' : '';
+            return `<span class="${cls}">${v > 0 ? '+' : ''}${v}</span>`;
+        }
+
+        function setPly(ply) {
+            const g = GAMES[curGame];
+            if (!g) return;
+            curPly = Math.max(-1, Math.min(ply, g.moves.length - 1));
+
+            const panel = document.getElementById('valPanel');
+            if (curPly < 0) {
+                renderBoard(START_FEN);
+                panel.innerHTML = 'Start position — step through moves to see each piece\'s material and square values.';
+            } else {
+                const m = g.moves[curPly];
+                renderBoard(m.fen, m.uci.slice(0, 2), m.uci.slice(2, 4));
+                const side = m.color === 'w' ? 'White' : 'Black';
+                let html = `<b>${curPly % 2 ? '' : (curPly / 2 + 1) + '. '}${m.san}</b> — ` +
+                    `${side} ${PIECE_NAME[m.piece]} ${m.uci.slice(0,2)}→${m.uci.slice(2,4)}<br>` +
+                    `<b>Piece value:</b> ${m.mat[0]} mg / ${m.mat[1]} eg<br>` +
+                    `<b>Square value (mg):</b> ${m.pst_from[0]} → ${m.pst_to[0]} (${fmt(m.pst_delta[0])})<br>` +
+                    `<b>Square value (eg):</b> ${m.pst_from[1]} → ${m.pst_to[1]} (${fmt(m.pst_delta[1])})`;
+                if (m.captured)
+                    html += `<br><b>Captures:</b> ${PIECE_NAME[m.captured]} (${fmt(m.cap_value)} material)`;
+                if (m.promo)
+                    html += `<br><b>Promotes to:</b> ${PIECE_NAME[m.promo]} (piece value now ${m.mat[0]} mg)`;
+                panel.innerHTML = html;
+            }
+
+            document.querySelectorAll('#moveList .mv').forEach(el =>
+                el.classList.toggle('sel', +el.dataset.ply === curPly));
+            const sel = document.querySelector('#moveList .mv.sel');
+            if (sel) sel.scrollIntoView({ block: 'nearest' });
+        }
+
+        setInterval(loadData, 60000);
         loadData();
     </script>
 </body>
