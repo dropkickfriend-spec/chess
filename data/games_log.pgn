@@ -1588,3 +1588,203 @@
 
 1. e4 d5 2. exd5 Qd6 3. Nc3 Na6 4. a3 Bd7 5. Nf3 Nh6 6. d4 Bf5 7. Ne5 g5 8. Bb5+ c6 9. dxc6 O-O-O 10. cxb7+ Kxb7 11. Qf3+ Kc7 12. Bxg5 Rg8 13. Bf4 Qe6 14. d5 Bg4 15. Qe3 Rxd5 16. Qxa7+ Kd8 17. Qa8+ Qc8 18. Qxd5+ Bd7 19. Bxd7 Kc7 20. Qc6+ Kb8 21. Qxc8+ Ka7 22. Be3+ Nc5 23. Bxc5# 1-0
 
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "1"]
+[White "chess-bb"]
+[Black "Stockfish (skill 20)"]
+[Result "0-1"]
+
+1. e4 d5 2. exd5 Nf6 3. d4 Nxd5 4. Nd2 Bf5 5. g4 Bg6 6. Qf3 Bxc2 7. Bd3 Bxd3 8. Qxd3 Nc6 9. Ne2 Qd7 10. Nb3 e5 11. Bd2 O-O-O 12. Qh3 exd4 13. O-O h5 14. Nbxd4 Nxd4 15. Nxd4 Qxg4+ 16. Qg3 Qxd4 17. Bc3 Nxc3 18. bxc3 Qg4 19. Rfe1 Qxg3+ 20. fxg3 Bc5+ 21. Kg2 Rd2+ 22. Kh3 g5 23. Re5 g4+ 24. Kh4 f6 25. Rxh5 Rxh2+ 26. Kxg4 R8xh5 27. Re1 Rg5+ 28. Kf4 Rf2+ 29. Ke4 Re5+ 30. Kd3 Rxe1 31. Kc4 Re4+ 32. Kb3 b5 33. a3 Rg4 34. c4 Rxg3# 0-1
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "2"]
+[White "Stockfish (skill 20)"]
+[Black "chess-bb"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 d5 3. exd5 e4 4. Qe2 Be7 5. Qxe4 Nf6 6. Qa4+ c6 7. dxc6 Nxc6 8. Be2 Bg4 9. h3 Bxf3 10. Bxf3 O-O 11. Bxc6 bxc6 12. O-O Qb8 13. d3 Qb5 14. Nc3 Qxa4 15. Nxa4 c5 16. Re1 Rae8 17. Nc3 Bd6 18. Rxe8 Rxe8 19. Bd2 Be5 20. Re1 Bh2+ 21. Kxh2 Rxe1 22. Bxe1 a6 23. f4 Nh5 24. Bf2 Nxf4 25. Bxc5 Nxg2 26. Kxg2 f5 27. Nd5 f4 28. b4 f3+ 29. Kxf3 h5 30. Nc7 Kf7 31. Nxa6 h4 32. Nc7 Kf6 33. a4 Kf7 34. a5 g5 35. a6 Kg7 36. a7 Kg8 37. Kg4 Kf7 38. a8=Q Kg6 39. Bd4 Kh7 40. Qh8+ Kg6 41. Qh5# 1-0
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "1"]
+[White "chess-bb"]
+[Black "Stockfish (skill 20)"]
+[Result "0-1"]
+
+1. e4 d5 2. e5 c5 3. d4 cxd4 4. c3 dxc3 5. Nxc3 e6 6. a4 Nc6 7. Nh3 Nxe5 8. Bf4 Ng6 9. Bg5 Be7 10. Qd2 Bd7 11. Nb5 Nf6 12. Bxf6 Bxf6 13. Nd6+ Kf8 14. Rc1 Be7 15. Nb5 a6 16. Nc3 Nh4 17. Bd3 Nxg2+ 18. Kf1 Nh4 19. Nf4 h5 20. Nfe2 Bf6 21. Na2 e5 22. f4 e4 23. Ng1 exd3 24. Qxd3 Bf5 25. Qb3 Be4 26. Nf3 Nxf3 27. Qe3 Qd7 28. Rd1 Qh3+ 29. Ke2 Qg2+ 30. Qf2 Nd4+ 31. Ke3 Nf5+ 32. Ke2 Bf3+ 33. Kd3 Qxf2 34. Nc3 Rc8 35. Rde1 Qxb2 36. Rc1 Rxc3+ 37. Rxc3 Qxc3# 0-1
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "2"]
+[White "Stockfish (skill 20)"]
+[Black "chess-bb"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 d5 3. exd5 e4 4. Qe2 Qe7 5. Nd4 f5 6. Nc3 c5 7. Ndb5 Na6 8. a3 Qf6 9. d3 e3 10. Bxe3 Kd8 11. g3 Bd7 12. d4 g5 13. h4 gxh4 14. Rxh4 h6 15. O-O-O Qe7 16. dxc5 Bxb5 17. Qxb5 Qf7 18. d6 Kc8 19. d7+ Kd8 20. Qxb7 Nc7 21. Bf4 Ke7 22. Qxa8 Kf6 23. d8=Q+ Ne7 24. Qxc7 Kg6 25. Qd6+ Qf6 26. Qe8+ Kg7 27. Be5 Kh7 28. Qxf6 Rg8 29. Qef7+ Bg7 30. Qxh6# 1-0
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "1"]
+[White "chess-bb"]
+[Black "Stockfish (skill 20)"]
+[Result "0-1"]
+
+1. d4 Nf6 2. e4 Nxe4 3. f3 Nf6 4. d5 c6 5. c4 cxd5 6. Qd4 dxc4 7. Qxc4 d5 8. Qb5+ Bd7 9. Qb4 Nc6 10. Qh4 e5 11. Bg5 Qb6 12. Nd2 Be7 13. Rc1 Bf5 14. Kd1 O-O 15. Qe1 Qxb2 16. Ne2 Nb4 17. Nc3 Bc2+ 18. Ke2 Rac8 19. Bxf6 Bxf6 20. Kf2 Rxc3 21. g3 e4 22. Rxc2 Nxc2 23. Qe2 e3+ 24. Kg1 Nd4 25. Qg2 exd2 26. Qf2 d1=Q 27. Qxb2 Nxf3+ 28. Kg2 Ne1+ 29. Kg1 Qd4+ 30. Qf2 Rf3 31. Qxd4 Bxd4# 0-1
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "2"]
+[White "Stockfish (skill 20)"]
+[Black "chess-bb"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 Bb4 3. c3 Be7 4. Nxe5 d6 5. Nf3 Nf6 6. d3 O-O 7. Be2 Bd7 8. O-O Qc8 9. h3 c5 10. c4 Nc6 11. Nc3 Nd4 12. Bf4 a6 13. Nxd4 cxd4 14. Nd5 Nxd5 15. cxd5 b6 16. Rc1 Qb7 17. Bg4 Rac8 18. Bxd7 Qxd7 19. Qb3 b5 20. Qb4 Rc5 21. Qxd4 Rfc8 22. Rxc5 dxc5 23. Qe3 b4 24. b3 f5 25. Rc1 fxe4 26. dxe4 Rf8 27. Bg3 Rd8 28. Qd3 Qb5 29. Qc2 Bd6 30. Bxd6 Rxd6 31. Qxc5 Qd7 32. Qxb4 Qd8 33. Qc4 Kf8 34. Kf1 Qa5 35. a4 g6 36. b4 Qd8 37. a5 Kg7 38. Qd4+ Kg8 39. Kg1 Rd7 40. Rd1 Qh4 41. d6 Rf7 42. d7 Qd8 43. Qc4 Kg7 44. Qd4+ Kg8 45. e5 Rf8 46. e6 h6 47. Qc5 Re8 48. dxe8=Q+ Qxe8 49. Rd7 h5 50. Qg5 Qxd7 51. exd7 Kf7 52. d8=Q Kg7 53. Qge7+ Kh6 54. Qh8# 1-0
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "1"]
+[White "chess-bb"]
+[Black "Stockfish (skill 20)"]
+[Result "0-1"]
+
+1. d4 Nf6 2. e4 Nxe4 3. Qf3 Nf6 4. Qb3 e6 5. Nf3 c5 6. Bf4 cxd4 7. c3 dxc3 8. Nxc3 a6 9. Qa4 Nc6 10. Rd1 d5 11. Qb3 Bd6 12. Bg5 h6 13. Bd2 b5 14. Ne2 e5 15. Qc2 Bd7 16. a3 Rc8 17. Qb1 O-O 18. Be3 Qa5+ 19. Bd2 Qd8 20. Be3 b4 21. h3 Re8 22. g4 bxa3 23. bxa3 Qa5+ 24. Bd2 Qxa3 25. Nfg1 Nb4 26. Bg2 Ba4 27. Bc1 Nc2+ 28. Kf1 Qb4 29. Bb2 Qc4 30. Rc1 d4 31. Bb7 Rb8 32. Bxa6 Qxa6 33. Rh2 d3 34. Rh1 Bc6 35. f3 dxe2+ 36. Nxe2 Qd3 37. Rh2 Qxf3+ 38. Kg1 Bc5+ 39. Bd4 Rxb1 40. Rxb1 Nxd4 41. Nxd4 Bxd4+ 42. Rf2 Qxf2# 0-1
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "2"]
+[White "Stockfish (skill 20)"]
+[Black "chess-bb"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 d6 3. d4 c5 4. dxe5 Bg4 5. Nc3 dxe5 6. Qxd8+ Kxd8 7. Nxe5 Bh5 8. Bf4 Nc6 9. Nxc6+ bxc6 10. f3 a6 11. g4 Bg6 12. O-O-O+ Kc8 13. Na4 h5 14. g5 f6 15. Bh3+ f5 16. exf5 Be8 17. f6+ Kb7 18. f7 Nf6 19. gxf6 Bd6 20. Rxd6 a5 21. fxe8=Q Raxe8 22. Rd7+ Ka6 23. Bf1+ Re2 24. Bxe2+ c4 25. Bxc4# 1-0
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "1"]
+[White "chess-bb"]
+[Black "Stockfish (skill 20)"]
+[Result "0-1"]
+
+1. d4 Nf6 2. Nf3 e6 3. e4 Nxe4 4. c3 d5 5. a4 Bd6 6. Bd3 O-O 7. O-O c5 8. g3 Nc6 9. Na3 f5 10. dxc5 Bxc5 11. b3 Nxc3 12. Qc2 Ne4 13. Qd1 Qf6 14. Nc2 h6 15. Bd2 Bd6 16. Rc1 e5 17. Ne3 Be6 18. Re1 Nxd2 19. Nxd2 e4 20. Qe2 Nd4 21. Qf1 Bb4 22. Nxd5 Bxd5 23. Bc4 Kh8 24. Bxd5 Bxd2 25. Kg2 Rad8 26. Qc4 Nf3 27. Red1 Ne5 28. Qc7 Bxc1 29. Qxb7 f4 30. Rxc1 fxg3 31. fxg3 Qf3+ 32. Kh3 Rf5 33. Qf7 Rxf7 34. Bxe4 Qh5+ 35. Kg2 Rd2+ 36. Kg1 Qxh2# 0-1
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "2"]
+[White "Stockfish (skill 20)"]
+[Black "chess-bb"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 d5 3. exd5 Bb4 4. a3 Be7 5. Nc3 Bg4 6. d4 exd4 7. Qxd4 Bxf3 8. gxf3 Bf6 9. Qa4+ c6 10. Ne4 b5 11. Qb3 cxd5 12. Bxb5+ Kf8 13. Nxf6 Nxf6 14. Be3 a6 15. Ba4 Nbd7 16. O-O-O Rb8 17. Qd3 Ne5 18. Qxa6 Ra8 19. Qb5 Kg8 20. Bb3 Ra5 21. Qb4 Nc6 22. Qb7 Qa8 23. Qxa8+ Rxa8 24. Bxd5 Nxd5 25. Rxd5 Ne7 26. Rd3 Ng6 27. Rhd1 h5 28. Rd8+ Kh7 29. Rxh8+ Kxh8 30. f4 Nxf4 31. Bxf4 h4 32. Kb1 Rc8 33. Be3 Kg8 34. Bg5 Rc4 35. b3 Rg4 36. Bd8 Rf4 37. a4 h3 38. a5 Rxf2 39. a6 Rxh2 40. a7 Re2 41. a8=Q Kh7 42. Qf3 Re6 43. Qxf7 Rg6 44. Qf5 h2 45. Rh1 Kg8 46. Qxg6 Kf8 47. Rxh2 Kg8 48. Qe8# 1-0
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "1"]
+[White "chess-bb"]
+[Black "Stockfish (skill 20)"]
+[Result "0-1"]
+
+1. e4 d5 2. exd5 Qxd5 3. c4 Qe4+ 4. Be2 Qxg2 5. Bf3 Qg6 6. d4 Nc6 7. Nc3 e5 8. Bh5 Qf5 9. Bf3 Nxd4 10. Be4 Qe6 11. Nf3 Nf6 12. Nd2 Nxe4 13. Ndxe4 Qxc4 14. Rg1 Bf5 15. b3 Qc6 16. Rg5 Bb4 17. f3 Bxc3+ 18. Kf2 Bxa1 19. Bd2 Bb2 20. Qb1 Qa6 21. Rxf5 Qe2+ 22. Kg1 Nxf5 23. Qxb2 O-O-O 24. Qc3 Nh4 25. Nf2 Rxd2 26. Qxd2 Qxd2 27. Kf1 Rd8 28. f4 Qc1+ 29. Nd1 Rd2 30. fxe5 Qxd1# 0-1
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "2"]
+[White "Stockfish (skill 20)"]
+[Black "chess-bb"]
+[Result "1-0"]
+
+1. e4 d5 2. exd5 Bf5 3. Bb5+ c6 4. dxc6 bxc6 5. Be2 e5 6. d3 g6 7. Bg4 Qf6 8. Nd2 Bxg4 9. Qxg4 Nd7 10. Ngf3 Qe6 11. Qxe6+ fxe6 12. O-O O-O-O 13. Nc4 c5 14. Ng5 e4 15. Nf7 Be7 16. Nxh8 Kb7 17. Nf7 Rf8 18. Nfd6+ Kc6 19. Nxe4 Ndf6 20. Ng3 Kb7 21. Bd2 Ng4 22. h3 Nxf2 23. Rxf2 Rxf2 24. Kxf2 Bh4 25. Re1 Nf6 26. Rxe6 Nh5 27. Nd6+ Kb8 28. Ne4 Nxg3 29. Bf4+ Ka8 30. Bxg3 Bxg3+ 31. Kxg3 c4 32. dxc4 Kb7 33. Re7+ Kb8 34. Nd6 a6 35. c5 Ka8 36. c6 h5 37. c7 h4+ 38. Kg4 Ka7 39. c8=Q+ Kb6 40. Qc7# 1-0
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "1"]
+[White "chess-bb"]
+[Black "Stockfish (skill 20)"]
+[Result "0-1"]
+
+1. e4 c5 2. Qf3 Nc6 3. Nc3 Nf6 4. b3 e6 5. Qh3 d5 6. g4 Nd4 7. Qd3 Nxe4 8. Nd1 h5 9. c3 Nc6 10. g5 Nxg5 11. Be2 e5 12. Nb2 Ne6 13. Nh3 g5 14. Qc2 Qf6 15. Qd3 g4 16. Rg1 gxh3 17. Qxd5 Nf4 18. Qe4 Bf5 19. Qc4 O-O-O 20. Bf1 Kb8 21. d4 cxd4 22. Bd2 Ba3 23. Na4 dxc3 24. Nxc3 Nd4 25. Be2 Nc2+ 26. Kf1 Rxd2 27. Nb5 Nxe2 28. Qc7+ Ka8 29. Qa5 Ng3+ 30. Rxg3 Bd3+ 31. Kg1 Qxf2+ 32. Kh1 Qxh2# 0-1
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "2"]
+[White "Stockfish (skill 20)"]
+[Black "chess-bb"]
+[Result "1-0"]
+
+1. e4 d5 2. exd5 Qd7 3. Nc3 b5 4. Bxb5 c6 5. dxc6 Qc7 6. d4 Nf6 7. Qf3 Bg4 8. Qf4 Qc8 9. Nf3 a6 10. Ba4 Nxc6 11. d5 Bd7 12. dxc6 Bxc6 13. Be3 Bxa4 14. Qxa4+ Qd7 15. Qb3 e6 16. Ne5 Qc7 17. Qa4+ Ke7 18. Bf4 Qb6 19. O-O-O Qb7 20. Bg5 Rd8 21. Nc6+ Qxc6 22. Qxc6 e5 23. Nd5+ Rxd5 24. Rxd5 a5 25. Qd7# 1-0
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "1"]
+[White "chess-bb"]
+[Black "Stockfish (skill 20)"]
+[Result "0-1"]
+
+1. d4 d5 2. e4 dxe4 3. a4 a6 4. Nc3 Nf6 5. f3 Nc6 6. d5 Nb4 7. fxe4 e6 8. Bg5 Be7 9. Nf3 exd5 10. exd5 O-O 11. Qe2 Nbxd5 12. O-O-O Nxc3 13. bxc3 Bd6 14. Kb1 h6 15. Bxf6 Qxf6 16. Qc4 b5 17. axb5 axb5 18. Qd5 Be6 19. Qd2 Ba2+ 20. Kb2 Ba3+ 21. Ka1 Bb4 22. Nd4 Bd5+ 23. Kb1 Qa6 24. Kb2 Qa3+ 25. Kb1 Qa1# 0-1
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "2"]
+[White "Stockfish (skill 20)"]
+[Black "chess-bb"]
+[Result "1-0"]
+
+1. e4 d5 2. exd5 Qxd5 3. Nc3 Qd7 4. Nf3 c5 5. d4 e6 6. Bb5 Nc6 7. Bf4 cxd4 8. Ne5 Qd8 9. Qf3 dxc3 10. Nxc6 Qb6 11. Nxa7+ Ke7 12. O-O-O f5 13. Nxc8+ Rxc8 14. Rd7+ Kf6 15. Qh5 Qe3+ 16. Bxe3 cxb2+ 17. Kb1 Bc5 18. Bg5+ Ke5 19. Re1+ Be3 20. Rxe3# 1-0
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "1"]
+[White "chess-bb"]
+[Black "Stockfish (skill 20)"]
+[Result "0-1"]
+
+1. e4 d5 2. d4 dxe4 3. Nc3 Nf6 4. f3 exf3 5. Nxf3 g6 6. Be3 Bg7 7. Bf4 O-O 8. Bc4 Nc6 9. d5 e5 10. Bg5 Na5 11. Qe2 h6 12. Bc1 e4 13. Nd4 c6 14. Bb3 c5 15. Ndb5 a6 16. Na3 b5 17. Naxb5 axb5 18. Qxb5 e3 19. Bxe3 Nxb3 20. cxb3 Ng4 21. Bxc5 Bxc3+ 22. bxc3 Re8+ 23. Kd2 Qxd5+ 24. Qd3 Qxg2+ 25. Bf2 Nxf2 26. Rhg1 Ne4+ 27. Kc1 Qxg1+ 28. Kb2 Qg2+ 29. Qc2 Nf2 30. c4 Nd3+ 31. Kc3 Qe4 32. Qxd3 Qe5+ 33. Kc2 Qxa1 34. a3 Bf5 35. Qe4 Bxe4+ 36. Kd2 Bf5 37. h3 Rad8# 0-1
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "2"]
+[White "Stockfish (skill 20)"]
+[Black "chess-bb"]
+[Result "1-0"]
+
+1. e4 d5 2. exd5 e5 3. dxe6 Nf6 4. exf7+ Kxf7 5. Bc4+ Be6 6. Bxe6+ Kxe6 7. Nf3 c6 8. d4 Ne4 9. Qe2 Qd5 10. Nbd2 Kf5 11. c4 Qa5 12. O-O Nd6 13. Re1 Qd5 14. cxd5 Kg4 15. Qe6+ Nf5 16. Re4+ Kh5 17. g4# 1-0
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "1"]
+[White "chess-bb"]
+[Black "Stockfish (skill 20)"]
+[Result "0-1"]
+
+1. d4 d5 2. Qd2 Nf6 3. f3 c5 4. e3 e6 5. Qc3 cxd4 6. exd4 Nc6 7. Qe3 Bd6 8. c3 e5 9. g4 O-O 10. dxe5 Bxe5 11. Kd2 d4 12. Qf2 dxc3+ 13. Kc2 Nb4+ 14. Kb3 cxb2 15. Bxb2 Be6+ 16. Ka4 Qd1+ 17. Ka5 Nc6+ 18. Kb5 a6+ 19. Kb6 Nd7+ 20. Kxb7 Na5# 0-1
+
+[Event "chess-bb vs Stockfish (skill 20)"]
+[Site "?"]
+[Date "2026.07.16"]
+[Round "2"]
+[White "Stockfish (skill 20)"]
+[Black "chess-bb"]
+[Result "1-0"]
+
+1. e4 d5 2. exd5 Qxd5 3. Nc3 Qe6+ 4. Be2 b5 5. Nxb5 Na6 6. Nf3 Bb7 7. O-O c5 8. d4 Bxf3 9. Bxf3 Rb8 10. Nxa7 Nf6 11. Bc6+ Nd7 12. dxc5 Rd8 13. Be3 Nb8 14. Bb5 Qg6 15. c6 e5 16. c7 Bd6 17. cxd8=R+ Kxd8 18. Qd5 Ke8 19. Rad1 Bc7 20. Bxd7+ Kf8 21. Qb7 Bd6 22. Qc8+ Ke7 23. Qxh8 Kxd7 24. Qxb8 f5 25. Bg5 Qf6 26. Rxd6+ Ke7 27. Qc7+ Ke8 28. Bxf6 gxf6 29. Rd8# 1-0
+
