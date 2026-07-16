@@ -212,11 +212,11 @@ void eval_init(void) {
 // a coordinated assault scores far more than a lone raider.
 int king_atk_weight[6] = { 0, 2, 2, 3, 5, 0 };
 
-// Wrapper: evaluate() now uses granular term-based evaluation
+// Wrapper: evaluate() now uses strategy-based evaluation
 #include "eval_strategy.h"
 
 int evaluate(const Board *bd) {
-    static EvalWeights weights = {0};
+    static StrategyWeights weights = {0};
     static int initialized = 0;
 
     if (!initialized) {

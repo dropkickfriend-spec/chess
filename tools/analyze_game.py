@@ -16,12 +16,10 @@ import chess
 import chess.pgn
 
 STRATEGIES = [
-    "MATERIAL",
-    "PASSED_PAWN", "ISOLATED_PAWN", "DOUBLED_PAWN", "UNSTOPPABLE_PASSER",
-    "KNIGHT_MOBILITY", "BISHOP_MOBILITY", "ROOK_MOBILITY", "QUEEN_MOBILITY",
-    "BISHOP_PAIR", "ROOK_OPEN_FILE", "ROOK_SEMIOPEN_FILE",
-    "KING_SHIELD", "KING_ESCAPE_SQUARES", "KING_BACK_RANK_TRAP",
-    "KING_ATTACK_UNITS"
+    "DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
+    "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE", "DEFENDER_LOGISTICS",
+    "KING_ACTIVITY", "PAWN_PROMOTION", "OPPOSITION",
+    "MATERIAL"
 ]
 
 PHASE_THRESHOLDS = {
@@ -47,7 +45,7 @@ def detect_phase(board):
     return "endgame"
 
 def trace_strategies(pgn_file, engine_path):
-    """Trace active term evaluations through each move."""
+    """Trace active strategies through each move."""
     import io
     game = chess.pgn.read_game(io.StringIO(pgn_file))
     if not game:
@@ -60,9 +58,14 @@ def trace_strategies(pgn_file, engine_path):
         board.push(move)
         phase = detect_phase(board)
 
-        # All terms are computed every position, so all are "active"
-        # In a granular system, we weight each term independently
-        active = STRATEGIES.copy()
+        # Determine which strategies are "active" in this position
+        active = ["MATERIAL"]  # Always active
+        if phase == "opening":
+            active.extend(["KING_SAFETY_OPENING"])
+        elif phase == "middlegame":
+            active.extend(["PIECE_ACTIVITY", "PAWN_STRUCTURE"])
+        else:
+            active.extend(["PAWN_PROMOTION"])
 
         strategy_log.append({
             "move": move_num,

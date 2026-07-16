@@ -1,4 +1,4 @@
-// eval_strategy.h — Granular term-based evaluation with self-calibration
+// eval_strategy.h — Modular, phase-aware evaluation with self-calibration
 #ifndef EVAL_STRATEGY_H
 #define EVAL_STRATEGY_H
 
@@ -8,54 +8,56 @@
 #define W_IDX(sq) ((7 - (sq) / 8) * 8 + (sq) % 8)
 #define B_IDX(sq) (sq)
 
-// Granular evaluation term weights (each term independently weighted)
+// Game phases
 typedef enum {
-    // Material (base piece values)
-    WEIGHT_MATERIAL,
+    PHASE_OPENING,
+    PHASE_MIDDLEGAME,
+    PHASE_ENDGAME
+} GamePhase;
 
-    // Pawn structure
-    WEIGHT_PASSED_PAWN,
-    WEIGHT_ISOLATED_PAWN,
-    WEIGHT_DOUBLED_PAWN,
-    WEIGHT_UNSTOPPABLE_PASSER,
+// Strategy types
+typedef enum {
+    // Opening strategies
+    STRAT_DEVELOPMENT,
+    STRAT_CENTER_CONTROL,
+    STRAT_KING_SAFETY_OPENING,
 
-    // Piece mobility
-    WEIGHT_KNIGHT_MOBILITY,
-    WEIGHT_BISHOP_MOBILITY,
-    WEIGHT_ROOK_MOBILITY,
-    WEIGHT_QUEEN_MOBILITY,
+    // Middlegame strategies
+    STRAT_PIECE_ACTIVITY,
+    STRAT_ATTACK_POTENTIAL,
+    STRAT_PAWN_STRUCTURE,
+    STRAT_DEFENDER_LOGISTICS,
 
-    // Piece positioning
-    WEIGHT_BISHOP_PAIR,
-    WEIGHT_ROOK_OPEN_FILE,
-    WEIGHT_ROOK_SEMIOPEN_FILE,
+    // Endgame strategies
+    STRAT_KING_ACTIVITY,
+    STRAT_PAWN_PROMOTION,
+    STRAT_OPPOSITION,
 
-    // King safety
-    WEIGHT_KING_SHIELD,
-    WEIGHT_KING_ESCAPE_SQUARES,
-    WEIGHT_KING_BACK_RANK_TRAP,
+    // All-phase
+    STRAT_MATERIAL,
 
-    // King attack
-    WEIGHT_KING_ATTACK_UNITS,
+    STRAT_COUNT  // Total number of strategies
+} StrategyType;
 
-    WEIGHT_COUNT  // Total number of terms
-} EvalWeight;
-
-// Weight config (loaded from file, updated after each game)
+// Strategy weight config (loaded from file, updated after each game)
 typedef struct {
-    float weight[WEIGHT_COUNT];
-} EvalWeights;
+    float weight[STRAT_COUNT];
+    int enabled[STRAT_COUNT];  // 1 = enabled, 0 = disabled
+} StrategyWeights;
 
-// Evaluate with granular term weighting
-int eval_with_strategies(const Board *bd, const EvalWeights *weights);
+// Detected game phase
+GamePhase eval_detect_phase(const Board *bd);
 
-// Load weights from file
-int eval_load_strategy_weights(const char *path, EvalWeights *weights);
+// Evaluate using active strategies for this phase
+int eval_with_strategies(const Board *bd, const StrategyWeights *weights);
 
-// Save weights to file
-int eval_save_strategy_weights(const char *path, const EvalWeights *weights);
+// Load strategy weights from file
+int eval_load_strategy_weights(const char *path, StrategyWeights *weights);
 
-// Get default weights
-void eval_default_strategy_weights(EvalWeights *weights);
+// Save strategy weights to file
+int eval_save_strategy_weights(const char *path, const StrategyWeights *weights);
+
+// Get default strategy weights
+void eval_default_strategy_weights(StrategyWeights *weights);
 
 #endif
