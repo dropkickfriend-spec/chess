@@ -11,6 +11,9 @@ Usage:
   python3 tools/training_loop.py [iterations]     # default 10 (= 20 games)
 """
 import os
+import tempfile
+
+TMP_DIR = tempfile.gettempdir()
 import shutil
 import subprocess
 import sys
@@ -45,10 +48,10 @@ for it in range(1, ITERATIONS + 1):
     subprocess.run(
         ["python3", "tools/match.py", "--engine", "./chess",
          "--stockfish", SF, "--games", "2", "--movetime", MOVETIME,
-         "--skill", "20", "--pgn", "/tmp/train_pair.pgn", "--upload"],
+         "--skill", "20", "--pgn", f"{TMP_DIR}/train_pair.pgn", "--upload"],
         env=BOOT_ENV, check=False)
 
-    with open("/tmp/train_pair.pgn") as f:
+    with open(f"{TMP_DIR}/train_pair.pgn") as f:
         while True:
             game = chess.pgn.read_game(f)
             if game is None:
@@ -63,12 +66,12 @@ for it in range(1, ITERATIONS + 1):
                 print(game, file=log)
                 print(file=log)
 
-            with open("/tmp/train_one.pgn", "w") as one:
+            with open(f"{TMP_DIR}/train_one.pgn", "w") as one:
                 print(game, file=one)
             # expected 0.05: losses to max-skill Stockfish are priced in and
             # teach little; draws and wins are the surprises worth learning
             subprocess.run(
-                ["python3", "tools/analyze_game.py", "/tmp/train_one.pgn",
+                ["python3", "tools/analyze_game.py", f"{TMP_DIR}/train_one.pgn",
                  "./chess", "strategy_weights.txt", str(outcome), "0.05"],
                 check=False)
             print(f"game {games_done}: {result} as "
@@ -77,7 +80,7 @@ for it in range(1, ITERATIONS + 1):
 
     # Bleed metric: cp lost per move by Stockfish's judgement — the metric
     # that shows learning long before the first earned draw.
-    subprocess.run(["python3", "tools/bleed_metric.py", "/tmp/train_pair.pgn",
+    subprocess.run(["python3", "tools/bleed_metric.py", f"{TMP_DIR}/train_pair.pgn",
                     "10"], check=False)
 
     if games_done and games_done % RETUNE_EVERY == 0:
@@ -89,7 +92,7 @@ for it in range(1, ITERATIONS + 1):
              "data/games_log.pgn"],
             env=env, check=False)
         with open("data/learned_values.txt.new", "w") as out, \
-             open("/tmp/retune.log", "w") as err:
+             open(f"{TMP_DIR}/retune.log", "w") as err:
             subprocess.run(["./chess", "tune", "data/texel_dataset.txt"],
                            stdout=out, stderr=err, env=BOOT_ENV, check=False)
         os.replace("data/learned_values.txt.new", "data/learned_values.txt")

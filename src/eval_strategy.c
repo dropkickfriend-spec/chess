@@ -82,10 +82,10 @@ static int eval_blockade(const Board *bd, int phase) {
         while (pp) {
             int sq = LSB(pp); POP_BIT(pp, sq);
             if (passed_mask[!side][sq] & our_pawns) continue;   // not passed
-            int stop = (!side == WHITE) ? sq + 8 : sq - 8;      // square ahead of enemy pawn
+            int stop = ((!side) == WHITE) ? sq + 8 : sq - 8;      // square ahead of enemy pawn
             if (stop < 0 || stop > 63) continue;
             if (!GET_BIT(bd->occ[side], stop)) continue;        // we must occupy it
-            int erank = (!side == WHITE) ? sq / 8 : 7 - sq / 8; // enemy pawn advancement
+            int erank = ((!side) == WHITE) ? sq / 8 : 7 - sq / 8; // enemy pawn advancement
             int mult = 1;
             // knight/bishop on the stop square = a proper blockader
             if (GET_BIT(bd->bb[side * 6 + 1] | bd->bb[side * 6 + 2], stop)) mult = 2;

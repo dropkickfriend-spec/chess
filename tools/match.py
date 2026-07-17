@@ -15,6 +15,9 @@ import argparse
 import datetime
 import json
 import os
+import tempfile
+
+TMP_DIR = tempfile.gettempdir()
 import shutil
 import subprocess
 import sys
@@ -347,7 +350,7 @@ def main():
                         "data/texel_dataset.txt", "data/games_log.pgn"],
                        cwd=root, env=env, check=False)
         with open(os.path.join(root, "data/learned_values.txt.new"), "w") as out, \
-             open("/tmp/retune.log", "w") as err:
+             open(f"{TMP_DIR}/retune.log", "w") as err:
             subprocess.run(["./chess", "tune", "data/texel_dataset.txt"],
                            cwd=root, env=env, stdout=out, stderr=err, check=False)
         os.replace(os.path.join(root, "data/learned_values.txt.new"),

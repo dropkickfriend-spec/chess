@@ -22,6 +22,9 @@ Usage:
 """
 import json
 import os
+import tempfile
+
+TMP_DIR = tempfile.gettempdir()
 import shutil
 import subprocess
 import sys
@@ -74,10 +77,10 @@ for it in range(1, ITERATIONS + 1):
         ["python3", "tools/match.py", "--engine", "./chess",
          "--stockfish", SF, "--games", str(GAMES_PER_MATCH),
          "--movetime", MOVETIME, "--skill", str(skill),
-         "--pgn", "/tmp/ladder_match.pgn", "--upload"],
+         "--pgn", f"{TMP_DIR}/ladder_match.pgn", "--upload"],
         env=BOOT_ENV, check=False)
 
-    with open("/tmp/ladder_match.pgn") as f:
+    with open(f"{TMP_DIR}/ladder_match.pgn") as f:
         while True:
             game = chess.pgn.read_game(f)
             if game is None:
@@ -91,12 +94,12 @@ for it in range(1, ITERATIONS + 1):
             with open("data/games_log.pgn", "a") as log:
                 print(game, file=log)
                 print(file=log)
-            with open("/tmp/ladder_one.pgn", "w") as one:
+            with open(f"{TMP_DIR}/ladder_one.pgn", "w") as one:
                 print(game, file=one)
             # expected 0.5: the rung IS our level until we out-earn it,
             # so wins and losses teach with equal force
             subprocess.run(
-                ["python3", "tools/analyze_game.py", "/tmp/ladder_one.pgn",
+                ["python3", "tools/analyze_game.py", f"{TMP_DIR}/ladder_one.pgn",
                  "./chess", "strategy_weights.txt", str(oc), "0.5"],
                 check=False)
             print(f"game {st['games_total']}: {res} as "
@@ -114,7 +117,7 @@ for it in range(1, ITERATIONS + 1):
     save_state(st)
 
     subprocess.run(["python3", "tools/bleed_metric.py",
-                    "/tmp/ladder_match.pgn", "10"], check=False)
+                    f"{TMP_DIR}/ladder_match.pgn", "10"], check=False)
 
     if it % 3 == 0:
         print("--- checkpoint: dataset + staged tune + calibration fit ---",
@@ -124,7 +127,7 @@ for it in range(1, ITERATIONS + 1):
                         "data/texel_dataset.txt", "data/games_log.pgn"],
                        env=env, check=False)
         with open("data/learned_values.txt.new", "w") as out, \
-             open("/tmp/retune.log", "w") as err:
+             open(f"{TMP_DIR}/retune.log", "w") as err:
             subprocess.run(["./chess", "tune", "data/texel_dataset.txt"],
                            stdout=out, stderr=err, env=BOOT_ENV, check=False)
         os.replace("data/learned_values.txt.new", "data/learned_values.txt")
