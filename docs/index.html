@@ -207,7 +207,7 @@
             <div class="legend" id="chartLegend"></div>
             <div style="color:#00d4ff;font-size:0.9em;margin:6px 0 2px">Full history — every snapshot since game 0</div>
             <canvas id="weightChartAll" width="1100" height="240" style="width: 100%; margin-bottom: 8px;"></canvas>
-            <div style="color:#00d4ff;font-size:0.9em;margin:12px 0 2px">Recent window — last 120 snapshots, auto-zoomed</div>
+            <div style="color:#00d4ff;font-size:0.9em;margin:12px 0 2px" id="chart2label">Current game — strategy contribution per move (cp)</div>
             <canvas id="weightChart" width="1100" height="240" style="width: 100%; margin-bottom: 15px;"></canvas>
             <div class="strategy-grid" id="weightsContainer"></div>
         </div>
@@ -458,8 +458,14 @@
             updateWeights(current);
             drawLegend();
             drawHistory(history, 'weightChartAll', 0);          // full history
-            const recent = history.slice(-120);
-            drawHistory(recent, 'weightChart', Math.max(0, history.length - recent.length));  // zoomed recent
+            // Second chart is driven by pollLive (current game). Seed it with
+            // the recent-snapshot window so it isn't blank between games.
+            if (!CURRENT_SERIES) {
+                const recent = history.slice(-120);
+                drawHistory(recent, 'weightChart', Math.max(0, history.length - recent.length));
+                document.getElementById('chart2label').textContent =
+                    'Between games — recent weight snapshots (waiting for a live game)';
+            }
             updateMatchTable(matches);
             initViewer(games);
             document.getElementById('timestamp').textContent = new Date().toLocaleString();
@@ -1060,7 +1066,48 @@
         }
 
         // ---- current game: per-move live stream ----
-        let LIVE_ROW = null, followLive = false;
+        let LIVE_ROW = null, followLive = false, CURRENT_SERIES = null;
+
+        // Per-move strategy contributions (raw x effective weight) for the
+        // current game: 13 lines, x = our move number. This is the weight
+        // chain re-priced each position, exactly what changes per move.
+        function drawContribChart(series) {
+            const canvas = document.getElementById('weightChart');
+            if (!canvas || !series || series.length < 2) return;
+            const ctx = canvas.getContext('2d');
+            const W = canvas.width, H = canvas.height, pad = 40;
+            ctx.clearRect(0, 0, W, H);
+
+            const flat = series.flat();
+            const hi = Math.max(...flat, 10), lo = Math.min(...flat, -10);
+            const span = (hi - lo) || 1;
+            const x = i => pad + i * (W - 2 * pad) / (series.length - 1);
+            const y = v => H - pad - ((v - lo) / span) * (H - 2 * pad);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath(); ctx.moveTo(pad, y(0)); ctx.lineTo(W - pad, y(0)); ctx.stroke();
+            ctx.setLineDash([]);
+
+            STRATEGY_NAMES.forEach((name, s) => {
+                ctx.strokeStyle = STRATEGY_COLORS[s];
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                series.forEach((row, i) => {
+                    const v = row[s] !== undefined ? row[s] : 0;
+                    i === 0 ? ctx.moveTo(x(i), y(v)) : ctx.lineTo(x(i), y(v));
+                });
+                ctx.stroke();
+            });
+
+            ctx.fillStyle = '#b0b0b0';
+            ctx.font = '12px sans-serif';
+            ctx.fillText('move 1', pad, H - 12);
+            ctx.fillText('move ' + series.length, W - pad - 55, H - 12);
+            ctx.fillText('+' + Math.round(hi) + 'cp', 4, pad + 8);
+            ctx.fillText(Math.round(lo) + 'cp', 4, H - pad);
+            ctx.fillText('0', 4, y(0) + 4);
+        }
 
         function drawEvalChart(id, evals) {
             const canvas = document.getElementById(id);
@@ -1096,7 +1143,7 @@
 
         async function pollLive() {
             const rows = await fetchJSON(
-                `${SUPABASE_URL}/rest/v1/live_game?id=eq.1&select=our_color,uci,evals,ply,updated_at`,
+                `${SUPABASE_URL}/rest/v1/live_game?id=eq.1&select=our_color,uci,evals,strat_series,ply,updated_at`,
                 { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
             const r = rows && rows[0];
             if (!r || !r.uci) return;
@@ -1104,9 +1151,22 @@
             let evals = [];
             try { evals = JSON.parse(r.evals || '[]'); } catch {}
             drawEvalChart('liveEvalChart', evals);
+
             const age = r.updated_at
                 ? Math.max(0, (Date.now() - new Date(r.updated_at).getTime()) / 1000)
                 : null;
+            // Second strategy chart = this game's per-move contributions, but
+            // only while the game is actually live; else fall back to snapshots.
+            let series = null;
+            try { series = JSON.parse(r.strat_series || 'null'); } catch {}
+            if (series && series.length > 1 && age !== null && age < 120) {
+                CURRENT_SERIES = series;
+                drawContribChart(series);
+                document.getElementById('chart2label').textContent =
+                    `Current game — strategy contribution per move (cp) · ${series.length} moves, chess-bb as ${r.our_color}`;
+            } else {
+                CURRENT_SERIES = null;
+            }
             document.getElementById('liveStatus').textContent =
                 `ply ${r.ply} · chess-bb as ${r.our_color} · eval (White POV) per move · ` +
                 (age === null ? '' : age < 90 ? `updated ${age.toFixed(0)}s ago` : 'between games');

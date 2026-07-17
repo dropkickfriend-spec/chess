@@ -99,6 +99,7 @@ def upload_match(sf_skill, sf_elo, movetime, wins, draws, losses, games):
         "pgn": g["pgn"],
         "uci": g.get("uci"),
         "evals": g.get("evals"),
+        "strat_series": g.get("strat_series"),
     } for g in games])
     print(f"uploaded match {match_id} ({len(games)} games) to Supabase")
 
@@ -118,15 +119,51 @@ def play_game(white, black, movetime, max_plies=1000, live_cb=None):
     return board, evals
 
 
-def make_live_cb(base_url, key, our_color):
+STRAT_ORDER = ["DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
+               "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE",
+               "DEFENDER_LOGISTICS", "KING_ACTIVITY", "PAWN_PROMOTION",
+               "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN"]
+
+
+def strat_contribs(engine_path, fen, env):
+    """Per-strategy weighted contribution (raw x effective weight) for one
+    position, via the engine's evalfens mode. Returns 13 ints in
+    STRAT_ORDER, or None on any failure."""
+    try:
+        p = subprocess.run([engine_path, "evalfens"], input=fen + "\n",
+                           capture_output=True, text=True, env=env, timeout=5)
+    except Exception:
+        return None
+    vals = {}
+    for line in p.stdout.splitlines():
+        f = line.split()
+        if len(f) == 3:
+            try:
+                vals[f[0]] = round(int(f[1]) * float(f[2]))
+            except ValueError:
+                pass
+    if len(vals) < len(STRAT_ORDER):
+        return None
+    return [vals.get(s, 0) for s in STRAT_ORDER]
+
+
+def make_live_cb(base_url, key, our_color, engine_path=None, env=None):
     """Stream the in-progress game to the live_game row after each move
-    (throttled to ~1/s) so dashboards update per move. Never lets a
-    network hiccup touch the game."""
+    (throttled to ~1/s) so dashboards update per move. On our moves also
+    records the per-move strategy contribution (the weight chain re-priced
+    each position). Never lets a network hiccup touch the game."""
     import datetime as _dt
     import time as _time
     last = [0.0]
+    series = []
 
     def cb(board, evals):
+        # Record the strategy contribution for the position after our move,
+        # every move, so the series is complete even under upload throttling.
+        if engine_path:
+            c = strat_contribs(engine_path, board.fen(), env)
+            if c is not None:
+                series.append(c)
         now = _time.time()
         if now - last[0] < 1.0 and not board.is_game_over(claim_draw=True):
             return
@@ -137,11 +174,14 @@ def make_live_cb(base_url, key, our_color):
                 "our_color": our_color,
                 "uci": " ".join(m.uci() for m in board.move_stack),
                 "evals": json.dumps(evals),
+                "strat_series": json.dumps(series),
                 "ply": board.ply(),
                 "updated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
             }], upsert=True)
         except Exception:
             pass
+
+    cb.series = series
     return cb
 
 
@@ -184,8 +224,10 @@ def main():
                 b_key = os.environ.get("SUPABASE_KEY") or conf_l.get("SUPABASE_KEY")
                 if b_url and b_key:
                     live_cb = make_live_cb(b_url.rstrip("/"), b_key,
-                                           "white" if we_are_white else "black")
+                                           "white" if we_are_white else "black",
+                                           args.engine, os.environ.copy())
             board, evals = play_game(white, black, args.movetime, live_cb=live_cb)
+            strat_series = getattr(live_cb, "series", []) if live_cb else []
 
             # Quit engines to reset state for next game
             ours.quit()
@@ -240,6 +282,7 @@ def main():
                 "pgn": str(game),
                 "uci": " ".join(m.uci() for m in board.move_stack),
                 "evals": json.dumps(evals),
+                "strat_series": json.dumps(strat_series),
             })
             if pgn_out:
                 print(game, file=pgn_out, flush=True)
