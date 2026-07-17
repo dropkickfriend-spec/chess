@@ -127,6 +127,7 @@ for it in range(1, ITERATIONS + 1):
         os.replace("data/learned_values.txt.new", "data/learned_values.txt")
         subprocess.run(["python3", "tools/fit_strategy_weights.py", "--apply"],
                        env=BOOT_ENV, check=False)
+        subprocess.run(["python3", "tools/upload_learned.py"], check=False)
 
 print(f"\nladder run done: rung SF skill {st['skill']}, "
       f"{st['games_total']} ladder games, "

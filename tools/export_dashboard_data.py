@@ -181,10 +181,9 @@ import chess.engine
 PLAN_DEPTH = 6   # lookahead per exported position for the plan overlay
 
 
-def export_learned_values():
-    """Merge learned_values.txt over the compiled defaults -> JSON for the
-    dashboard, so the board overlays show what the engine actually plays
-    with (registry semantics: material_mg+1 index 0 is the knight)."""
+def build_learned_tables():
+    """Merge learned_values.txt over the compiled defaults into the table dict
+    the dashboard renders (registry semantics: material_mg+1 index 0 = knight)."""
     tables = {
         "material_mg": list(MATERIAL_MG),
         "material_eg": list(MATERIAL_EG),
@@ -212,9 +211,15 @@ def export_learned_values():
                     tables["king_eg"][idx] = val
     except OSError:
         pass
+    return tables
+
+
+def export_learned_values():
+    """Write the learned tables to the committed dashboard JSON (offline
+    fallback). The live path is upload_learned_tables() -> Supabase."""
     out = os.path.join(ROOT, "docs", "data", "learned_values.json")
     with open(out, "w") as f:
-        json.dump(tables, f)
+        json.dump(build_learned_tables(), f)
     print("exported learned value tables")
 
 

@@ -439,7 +439,14 @@
             const snapGames = await fetchJSON('data/games.json') || [];
             const liveGames = await fetchLiveGames() || [];
             const games = [...liveGames, ...snapGames];
-            LT = await fetchJSON('data/learned_values.json') || LT;
+            // Learned value tables: live from Supabase (any machine's retune),
+            // committed JSON as offline fallback.
+            const ltRow = await fetchJSON(
+                `${SUPABASE_URL}/rest/v1/learned_tables?id=eq.1&select=tables`,
+                { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
+            let ltLive = null;
+            try { if (ltRow && ltRow[0]) ltLive = JSON.parse(ltRow[0].tables); } catch {}
+            LT = ltLive || await fetchJSON('data/learned_values.json') || LT;
 
             let history = await fetchWeightHistory();
             let current = weightsFile.current || [];

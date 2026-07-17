@@ -345,6 +345,7 @@ def main():
                    os.path.join(root, "data/learned_values.txt"))
         subprocess.run(["python3", "tools/fit_strategy_weights.py", "--apply"],
                        cwd=root, env=env, check=False)
+        subprocess.run(["python3", "tools/upload_learned.py"], cwd=root, check=False)
         print("retune complete.")
 
 
