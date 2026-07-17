@@ -205,7 +205,10 @@
         <div class="section">
             <h2>Strategy Weights (Self-Tuning)</h2>
             <div class="legend" id="chartLegend"></div>
-            <canvas id="weightChart" width="1100" height="280" style="width: 100%; margin-bottom: 15px;"></canvas>
+            <div style="color:#00d4ff;font-size:0.9em;margin:6px 0 2px">Full history — every snapshot since game 0</div>
+            <canvas id="weightChartAll" width="1100" height="240" style="width: 100%; margin-bottom: 8px;"></canvas>
+            <div style="color:#00d4ff;font-size:0.9em;margin:12px 0 2px">Recent window — last 120 snapshots, auto-zoomed</div>
+            <canvas id="weightChart" width="1100" height="240" style="width: 100%; margin-bottom: 15px;"></canvas>
             <div class="strategy-grid" id="weightsContainer"></div>
         </div>
 
@@ -454,7 +457,9 @@
             updateStats(matches);
             updateWeights(current);
             drawLegend();
-            drawHistory(history.slice(-100));   // recent window so live points visibly move
+            drawHistory(history, 'weightChartAll', 0);          // full history
+            const recent = history.slice(-120);
+            drawHistory(recent, 'weightChart', Math.max(0, history.length - recent.length));  // zoomed recent
             updateMatchTable(matches);
             initViewer(games);
             document.getElementById('timestamp').textContent = new Date().toLocaleString();
@@ -500,16 +505,24 @@
                 `<span><i style="background:${STRATEGY_COLORS[i]}"></i>${n}</span>`).join('');
         }
 
-        function drawHistory(history) {
-            const canvas = document.getElementById('weightChart');
+        // Draw a weight-history chart into `canvasId`. `startGame` labels the
+        // x-axis so the recent window shows real game numbers, not 0-based.
+        function drawHistory(history, canvasId, startGame) {
+            const canvas = document.getElementById(canvasId);
             if (!canvas || history.length < 2) return;
             const ctx = canvas.getContext('2d');
             const W = canvas.width, H = canvas.height, pad = 34;
             ctx.clearRect(0, 0, W, H);
+            startGame = startGame || 0;
 
-            const maxW = Math.max(...history.flat(), 1.5);
+            // Auto-zoom the y-axis to this window's actual range (so a 5x
+            // breakout on the full chart doesn't flatten the recent one).
+            const flat = history.flat();
+            const maxW = Math.max(...flat, 1.5);
+            const minW = Math.max(0, Math.min(...flat, 0.5));
+            const span = (maxW - minW) || 1;
             const x = i => pad + i * (W - 2 * pad) / (history.length - 1);
-            const y = v => H - pad - (v / maxW) * (H - 2 * pad);
+            const y = v => H - pad - ((v - minW) / span) * (H - 2 * pad);
 
             ctx.strokeStyle = 'rgba(255,255,255,0.2)';
             ctx.setLineDash([4, 4]);
@@ -529,10 +542,11 @@
 
             ctx.fillStyle = '#b0b0b0';
             ctx.font = '12px sans-serif';
-            ctx.fillText('game 0', pad, H - 10);
-            ctx.fillText('game ' + (history.length - 1), W - pad - 50, H - 10);
-            ctx.fillText(maxW.toFixed(1) + 'x', 4, pad);
+            ctx.fillText('game ' + startGame, pad, H - 10);
+            ctx.fillText('game ' + (startGame + history.length - 1), W - pad - 60, H - 10);
+            ctx.fillText(maxW.toFixed(1) + 'x', 4, pad + 8);
             ctx.fillText('1.0x', 4, y(1) + 4);
+            if (minW > 0.05) ctx.fillText(minW.toFixed(1) + 'x', 4, H - pad);
         }
 
         function updateMatchTable(matches) {
