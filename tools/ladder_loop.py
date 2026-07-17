@@ -63,6 +63,9 @@ def save_state(st):
 
 st = load_state()
 
+# Start from the latest Supabase brain so every machine plays the same weights.
+subprocess.run(["python3", "tools/sync_weights.py"], check=False)
+
 for it in range(1, ITERATIONS + 1):
     skill = st["skill"]
     print(f"=== ladder iteration {it}/{ITERATIONS} — rung: SF skill {skill} ===",

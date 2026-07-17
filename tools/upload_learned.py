@@ -26,12 +26,21 @@ def main():
         print("no supabase creds; skipped")
         return
     tables = build_learned_tables()
+    # Verbatim learned_values.txt so any machine can restore the EXACT brain
+    # (the display 'tables' dict is only a subset - no scalars/coord/plan).
+    raw = ""
+    try:
+        with open(os.path.join(ROOT, "data", "learned_values.txt")) as f:
+            raw = f.read()
+    except OSError:
+        pass
     supabase_insert(base.rstrip("/"), key, "learned_tables", [{
         "id": 1,
         "tables": json.dumps(tables),
+        "raw": raw,
         "updated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }], upsert=True)
-    print("uploaded learned tables to Supabase")
+    print("uploaded learned tables + raw values to Supabase")
 
 
 if __name__ == "__main__":

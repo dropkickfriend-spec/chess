@@ -203,9 +203,17 @@ def main():
     ap.add_argument("--retune", action="store_true",
                     help="after the batch, rebuild the dataset, staged-tune the "
                          "value tables, and refit the strategy calibration")
+    ap.add_argument("--sync", action="store_true",
+                    help="pull the latest weights from Supabase into the local "
+                         "files before playing (Supabase = source of truth)")
     args = ap.parse_args()
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # Supabase-canonical brain: pull the latest weights into the files the
+    # engine reads, so it never plays stale files or hardcoded defaults.
+    if args.sync:
+        subprocess.run(["python3", "tools/sync_weights.py"], cwd=root, check=False)
 
     pgn_out = open(args.pgn, "w") if args.pgn else None
     wins = draws = losses = 0
