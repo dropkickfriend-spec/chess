@@ -343,7 +343,10 @@ def main():
     if args.retune:
         print("\nretuning value tables + calibration from the full log...")
         sys.stdout.flush()
-        env = dict(os.environ, DATASET_LOCAL_ONLY="1",
+        # Build the dataset from the FULL shared Supabase game history (plus
+        # any un-uploaded local games) so every machine retunes on the same
+        # corpus, not just its own local log.
+        env = dict(os.environ,
                    CHESS_WEIGHTS="data/learned_values.txt",
                    CHESS_BOOK="data/route_book.txt")
         subprocess.run(["python3", "tools/make_dataset.py",

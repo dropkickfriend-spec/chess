@@ -122,7 +122,7 @@ for it in range(1, ITERATIONS + 1):
     if it % 3 == 0:
         print("--- checkpoint: dataset + staged tune + calibration fit ---",
               flush=True)
-        env = dict(os.environ, DATASET_LOCAL_ONLY="1")
+        env = dict(os.environ)  # dataset from full shared Supabase corpus
         subprocess.run(["python3", "tools/make_dataset.py",
                         "data/texel_dataset.txt", "data/games_log.pgn"],
                        env=env, check=False)

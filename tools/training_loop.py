@@ -86,7 +86,7 @@ for it in range(1, ITERATIONS + 1):
     if games_done and games_done % RETUNE_EVERY == 0:
         print(f"--- retuning square/piece values on {games_done} new games ---",
               flush=True)
-        env = dict(os.environ, DATASET_LOCAL_ONLY="1")
+        env = dict(os.environ)  # dataset from full shared Supabase corpus
         subprocess.run(
             ["python3", "tools/make_dataset.py", "data/texel_dataset.txt",
              "data/games_log.pgn"],
