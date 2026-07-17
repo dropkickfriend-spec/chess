@@ -158,16 +158,17 @@ def make_live_cb(base_url, key, our_color, engine_path=None, env=None):
     series = []
 
     def cb(board, evals):
-        # Record the strategy contribution for the position after our move,
-        # every move, so the series is complete even under upload throttling.
-        if engine_path:
-            c = strat_contribs(engine_path, board.fen(), env)
-            if c is not None:
-                series.append(c)
+        # Throttle to ~1/s. The per-move strategy breakdown spawns an engine
+        # subprocess, so we only pay for it when we actually upload — keeps
+        # games fast (especially on phones) while the live graph still moves.
         now = _time.time()
         if now - last[0] < 1.0 and not board.is_game_over(claim_draw=True):
             return
         last[0] = now
+        if engine_path:
+            c = strat_contribs(engine_path, board.fen(), env)
+            if c is not None:
+                series.append(c)
         try:
             supabase_insert(base_url, key, "live_game", [{
                 "id": 1,
