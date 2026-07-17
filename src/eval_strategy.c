@@ -27,9 +27,37 @@ extern int LOGI_PLAN;              // eval.c: plan-blockage price multiplier
 static const int phase_w[6] = { 0, 1, 1, 2, 4, 0 };
 
 // Strategy: MATERIAL — base piece values
+// Strategy: MATERIAL — INTRINSIC piece worth only (base values), no squares.
+// Separated from SQUARE_VALUE so the two carry independent learnable weights
+// and compete in the shared budget (raising one dilutes the other).
 static int eval_material(const Board *bd, int *phase_out) {
     int mg = 0, eg = 0, phase = 0;
-    
+
+    for (int side = WHITE; side <= BLACK; side++) {
+        int sign = side == WHITE ? 1 : -1;
+        for (int pt = 0; pt < 6; pt++) {
+            U64 bb = bd->bb[side * 6 + pt];
+            while (bb) {
+                int sq = LSB(bb); POP_BIT(bb, sq);
+                phase += phase_w[pt];
+                mg += sign * material_mg[pt];
+                eg += sign * material_eg[pt];
+            }
+        }
+    }
+
+    if (phase > 24) phase = 24;
+    *phase_out = phase;
+    return (mg * phase + eg * (24 - phase)) / 24;
+}
+
+// Strategy: SQUARE_VALUE — piece-square tables only (where each piece stands),
+// with the same tapered mg/eg blend. Pairs with MATERIAL; the search's PV is
+// built from the combined eval, so this term automatically reshapes the game
+// plan, and gather_raw runs it through the same best-move certainty filter as
+// MATERIAL/GAME_PLAN.
+static int eval_square_value(const Board *bd, int phase) {
+    int mg = 0, eg = 0;
     for (int side = WHITE; side <= BLACK; side++) {
         int sign = side == WHITE ? 1 : -1;
         for (int pt = 0; pt < 6; pt++) {
@@ -37,22 +65,13 @@ static int eval_material(const Board *bd, int *phase_out) {
             while (bb) {
                 int sq = LSB(bb); POP_BIT(bb, sq);
                 int idx = side == WHITE ? W_IDX(sq) : B_IDX(sq);
-                phase += phase_w[pt];
-                
-                int m = material_mg[pt] + pst_mg[pt][idx];
-                int e = material_eg[pt];
-                if (pt == 0) e += pawn_eg[idx];
-                else if (pt == 5) e += king_eg[idx];
-                else e += pst_mg[pt][idx];
-                
-                mg += sign * m;
-                eg += sign * e;
+                mg += sign * pst_mg[pt][idx];
+                if (pt == 0)      eg += sign * pawn_eg[idx];
+                else if (pt == 5) eg += sign * king_eg[idx];
+                else              eg += sign * pst_mg[pt][idx];
             }
         }
     }
-    
-    if (phase > 24) phase = 24;
-    *phase_out = phase;
     return (mg * phase + eg * (24 - phase)) / 24;
 }
 
@@ -494,7 +513,7 @@ const char *strategy_names[STRAT_COUNT] = {
     "DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
     "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE",
     "DEFENDER_LOGISTICS", "KING_ACTIVITY", "PAWN_PROMOTION",
-    "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN"
+    "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN", "SQUARE_VALUE"
 };
 
 extern int PLAN_PART, PLAN_IDLE, PLAN_ENGAGE, CERT_FLOOR, LOGI_PLAN;
@@ -647,6 +666,7 @@ static void gather_raw(const Board *bd, int *phase_out, int raw[STRAT_COUNT]) {
     raw[STRAT_PAWN_PROMOTION]      = eval_pawn_promotion(bd, phase);
     raw[STRAT_COORDINATION]        = eval_coordination(bd, phase);
     raw[STRAT_GAME_PLAN]           = eval_game_plan(bd, phase);
+    raw[STRAT_SQUARE_VALUE]        = eval_square_value(bd, phase);
 
     // A queen is worth less when someone is getting mated — yours if the
     // attack is on you, theirs if you can throw it at their king. Material's
@@ -663,8 +683,9 @@ static void gather_raw(const Board *bd, int *phase_out, int raw[STRAT_COUNT]) {
     // floor factor in tune/tooling where no lookahead exists).
     int floor_ = CERT_FLOOR < 0 ? 0 : CERT_FLOOR > 100 ? 100 : CERT_FLOOR;
     int realise = floor_ + (100 - floor_) * plan_certainty / 100;
-    raw[STRAT_MATERIAL]  = raw[STRAT_MATERIAL]  * realise / 100;
-    raw[STRAT_GAME_PLAN] = raw[STRAT_GAME_PLAN] * realise / 100;
+    raw[STRAT_MATERIAL]     = raw[STRAT_MATERIAL]     * realise / 100;
+    raw[STRAT_GAME_PLAN]    = raw[STRAT_GAME_PLAN]    * realise / 100;
+    raw[STRAT_SQUARE_VALUE] = raw[STRAT_SQUARE_VALUE] * realise / 100;
 
     *phase_out = phase;
 }
@@ -681,6 +702,7 @@ static float weight_mean(const Board *bd, const StrategyWeights *w, int phase,
     act[STRAT_DEFENDER_LOGISTICS]  = 1.0f;
     act[STRAT_COORDINATION]        = 1.0f;
     act[STRAT_GAME_PLAN]           = 1.0f;
+    act[STRAT_SQUARE_VALUE]        = 1.0f;
     act[STRAT_KING_SAFETY_OPENING] = po;
     act[STRAT_ATTACK_POTENTIAL]    = po;
     act[STRAT_DEVELOPMENT]         = po;

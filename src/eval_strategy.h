@@ -30,6 +30,7 @@ typedef enum {
     STRAT_MATERIAL,
     STRAT_COORDINATION,   // pieces working together (own weight set below)
     STRAT_GAME_PLAN,      // lookahead prices pieces by their role in the PV
+    STRAT_SQUARE_VALUE,   // piece-square tables, split out of MATERIAL
 
     STRAT_COUNT  // Total number of strategies
 } StrategyType;
