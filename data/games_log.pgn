@@ -5488,3 +5488,23 @@
 
 1. e3 e6 2. c4 d5 3. Nc3 h5 4. cxd5 exd5 5. d4 Be7 6. Bd3 Bg4 7. Nf3 Nf6 8. h3 Bxf3 9. Qxf3 Rf8 10. e4 Nc6 11. exd5 Nxd4 12. Qd1 Nxd5 13. Bb1 c5 14. Qa4+ b5 15. Qd1 Nf6 16. Bd3 c4 17. Bb1 Qd7 18. Be3 Bc5 19. O-O Ne6 20. Qf3 Rc8 21. Rd1 Nd4 22. Bxd4 Bxd4 23. Bf5 Qd6 24. Nxb5 Qe5 25. Rxd4 Rb8 26. Nc7+ Qxc7 27. Re1+ Qe7 28. Qc6+ Nd7 29. Bxd7+ Kd8 30. Be8+ Qd6 31. Rxd6# 1-0
 
+[Event "chess-bb vs Stockfish (skill 3)"]
+[Site "?"]
+[Date "2026.07.17"]
+[Round "1"]
+[White "chess-bb"]
+[Black "Stockfish (skill 3)"]
+[Result "1-0"]
+
+1. e3 e6 2. Nc3 g6 3. d4 Nc6 4. Nf3 Bg7 5. Be2 d6 6. Qd2 d5 7. O-O Nh6 8. b3 g5 9. Qd1 Nf5 10. Ba3 g4 11. Nd2 h5 12. Re1 Bd7 13. Nb5 h4 14. Bxg4 h3 15. Bxh3 Rxh3 16. gxh3 a6 17. Nc3 Qf6 18. Qe2 Ncxd4 19. exd4 Nxd4 20. Qd3 O-O-O 21. Re3 Bh6 22. Be7 Ne2+ 23. Rxe2 Rg8+ 24. Kf1 Qg7 25. Qg3 Bb5 26. Qxg7 Bxg7 27. Bb4 b6 28. Re1 Bxc3 29. Bxc3 Rd8 30. Nf3 a5 31. h4 f6 32. Bxf6 Rd7 33. c4 Ba6 34. Rxe6 Kb8 35. Re8+ Ka7 36. Ne5 Rd6 37. Bg5 a4 38. bxa4 Kb7 39. h5 dxc4 40. h4 Rd5 41. h6 c3+ 42. Kg2 Rd2 43. h7 Rxa2 44. h8=Q Bf1+ 45. Kxf1 Rc2 46. Rb8+ Ka7 47. Nc6+ Ka6 48. Qc8# 1-0
+
+[Event "chess-bb vs Stockfish (skill 3)"]
+[Site "?"]
+[Date "2026.07.17"]
+[Round "2"]
+[White "Stockfish (skill 3)"]
+[Black "chess-bb"]
+[Result "1/2-1/2"]
+
+1. e4 d5 2. exd5 Qxd5 3. Nc3 Qe6+ 4. Nge2 Na6 5. d4 Nf6 6. g3 Bd7 7. d5 Qd6 8. Nf4 g5 9. Nfe2 e6 10. Bg2 h6 11. O-O O-O-O 12. Qd4 exd5 13. Qxa7 Nb8 14. Be3 Re8 15. Bd4 Bg7 16. Rfd1 Rxe2 17. Bxf6 Bxf6 18. Nxe2 Bc6 19. Nd4 Qd7 20. Nxc6 bxc6 21. Rab1 Rd8 22. b4 Qg4 23. Bf1 Be5 24. Rd3 Kd7 25. h3 Qe6 26. Re1 f6 27. a4 Kc8 28. a5 g4 29. a6 Kd7 30. Qb7 Nxa6 31. Qxa6 gxh3 32. Qa3 Rb8 33. Rf3 h2+ 34. Kh1 h5 35. Qe3 Rxb4 36. Qh6 Re4 37. Rb1 Kd6 38. Qxh5 Qg4 39. Qxg4 Rxg4 40. Bd3 c5 41. Re3 Bd4 42. Rf3 Be5 43. Bf5 Rb4 44. Rfb3 Rxb3 45. cxb3 Bc3 46. f4 Bd4 47. Kxh2 Bc3 48. Kh1 Bb4 49. Rd1 c6 50. g4 Bc3 51. Bh7 Bb2 52. Bf5 Bc3 53. Bd3 Bd4 54. Bc2 Be3 55. Rf1 d4 56. Bf5 d3 57. Kg2 d2 58. Kg3 Bd4 59. Rd1 Bc3 60. Kf3 Ba5 61. Be4 Bb4 62. g5 fxg5 63. fxg5 Ke6 64. Bh7 Ke7 65. Bb1 Ke6 66. Bc2 Bc3 67. Bd3 Be5 68. Be4 Bc3 69. g6 Kf6 70. Ke3 Kg7 71. Kf3 Kf6 72. Bc2 Kg7 73. Rf1 Bd4 74. Kg2 Bc3 75. Kf3 Bd4 76. Kg2 Bc3 1/2-1/2
+

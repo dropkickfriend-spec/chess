@@ -1,0 +1,9 @@
+[Event "chess-bb vs Stockfish (skill 3)"]
+[Site "?"]
+[Date "2026.07.17"]
+[Round "2"]
+[White "Stockfish (skill 3)"]
+[Black "chess-bb"]
+[Result "1/2-1/2"]
+
+1. e4 d5 2. exd5 Qxd5 3. Nc3 Qe6+ 4. Nge2 Na6 5. d4 Nf6 6. g3 Bd7 7. d5 Qd6 8. Nf4 g5 9. Nfe2 e6 10. Bg2 h6 11. O-O O-O-O 12. Qd4 exd5 13. Qxa7 Nb8 14. Be3 Re8 15. Bd4 Bg7 16. Rfd1 Rxe2 17. Bxf6 Bxf6 18. Nxe2 Bc6 19. Nd4 Qd7 20. Nxc6 bxc6 21. Rab1 Rd8 22. b4 Qg4 23. Bf1 Be5 24. Rd3 Kd7 25. h3 Qe6 26. Re1 f6 27. a4 Kc8 28. a5 g4 29. a6 Kd7 30. Qb7 Nxa6 31. Qxa6 gxh3 32. Qa3 Rb8 33. Rf3 h2+ 34. Kh1 h5 35. Qe3 Rxb4 36. Qh6 Re4 37. Rb1 Kd6 38. Qxh5 Qg4 39. Qxg4 Rxg4 40. Bd3 c5 41. Re3 Bd4 42. Rf3 Be5 43. Bf5 Rb4 44. Rfb3 Rxb3 45. cxb3 Bc3 46. f4 Bd4 47. Kxh2 Bc3 48. Kh1 Bb4 49. Rd1 c6 50. g4 Bc3 51. Bh7 Bb2 52. Bf5 Bc3 53. Bd3 Bd4 54. Bc2 Be3 55. Rf1 d4 56. Bf5 d3 57. Kg2 d2 58. Kg3 Bd4 59. Rd1 Bc3 60. Kf3 Ba5 61. Be4 Bb4 62. g5 fxg5 63. fxg5 Ke6 64. Bh7 Ke7 65. Bb1 Ke6 66. Bc2 Bc3 67. Bd3 Be5 68. Be4 Bc3 69. g6 Kf6 70. Ke3 Kg7 71. Kf3 Kf6 72. Bc2 Kg7 73. Rf1 Bd4 74. Kg2 Bc3 75. Kf3 Bd4 76. Kg2 Bc3 1/2-1/2
