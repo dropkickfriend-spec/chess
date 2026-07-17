@@ -1,11 +1,15 @@
 {
- "skill": 1,
+ "skill": 2,
  "window": [],
- "games_total": 12,
+ "games_total": 24,
  "promotions": [
   {
    "from_skill": 0,
    "at_game": 12
+  },
+  {
+   "from_skill": 1,
+   "at_game": 24
   }
  ]
 }
