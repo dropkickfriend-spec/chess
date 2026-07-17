@@ -196,7 +196,15 @@ def main():
     ap.add_argument("--pgn", default=None, help="write games to this PGN file")
     ap.add_argument("--upload", action="store_true",
                     help="store results in Supabase (needs SUPABASE_URL/SUPABASE_KEY)")
+    ap.add_argument("--learn", action="store_true",
+                    help="nudge strategy_weights.txt per game and append to "
+                         "data/games_log.pgn (makes fixed-skill runs compound)")
+    ap.add_argument("--retune", action="store_true",
+                    help="after the batch, rebuild the dataset, staged-tune the "
+                         "value tables, and refit the strategy calibration")
     args = ap.parse_args()
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     pgn_out = open(args.pgn, "w") if args.pgn else None
     wins = draws = losses = 0
@@ -287,6 +295,24 @@ def main():
             if pgn_out:
                 print(game, file=pgn_out, flush=True)
                 print(file=pgn_out)
+
+            # --learn: same per-game learning ladder_loop.py does — nudge the
+            # strategy weights from this game's outcome and add it to the
+            # permanent training log so the next game plays a changed engine.
+            if args.learn:
+                oc = {"win": 1.0, "draw": 0.5, "loss": 0.0}[outcome]
+                with open(os.path.join(root, "data", "games_log.pgn"), "a") as log:
+                    print(game, file=log); print(file=log)
+                one = os.path.join(root, "tmp_learn_game.pgn")
+                with open(one, "w") as f:
+                    print(game, file=f)
+                subprocess.run(["python3", os.path.join(root, "tools", "analyze_game.py"),
+                                one, args.engine,
+                                os.path.join(root, "strategy_weights.txt"),
+                                str(oc), "0.5"],
+                               cwd=root, check=False)
+                print(f"  learned from game {g+1} (outcome {oc})")
+                sys.stdout.flush()
     finally:
         if pgn_out:
             pgn_out.close()
@@ -299,6 +325,27 @@ def main():
     if args.upload:
         upload_match(args.skill, args.elo, args.movetime,
                      wins, draws, losses, played)
+
+    # --retune: the slow deep learning — relearn the square/piece value tables
+    # and refit the strategy calibration from the whole (now larger) log.
+    if args.retune:
+        print("\nretuning value tables + calibration from the full log...")
+        sys.stdout.flush()
+        env = dict(os.environ, DATASET_LOCAL_ONLY="1",
+                   CHESS_WEIGHTS="data/learned_values.txt",
+                   CHESS_BOOK="data/route_book.txt")
+        subprocess.run(["python3", "tools/make_dataset.py",
+                        "data/texel_dataset.txt", "data/games_log.pgn"],
+                       cwd=root, env=env, check=False)
+        with open(os.path.join(root, "data/learned_values.txt.new"), "w") as out, \
+             open("/tmp/retune.log", "w") as err:
+            subprocess.run(["./chess", "tune", "data/texel_dataset.txt"],
+                           cwd=root, env=env, stdout=out, stderr=err, check=False)
+        os.replace(os.path.join(root, "data/learned_values.txt.new"),
+                   os.path.join(root, "data/learned_values.txt"))
+        subprocess.run(["python3", "tools/fit_strategy_weights.py", "--apply"],
+                       cwd=root, env=env, check=False)
+        print("retune complete.")
 
 
 if __name__ == "__main__":
