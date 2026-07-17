@@ -116,6 +116,12 @@ int CHEB(int a, int b) {
 // magnitudes are learned from game outcomes via the tuning registry.
 int coord_w[5] = { 4, 4, 4, 4, 4 };
 
+// Square-action weights (cp per instance), learned via the registry:
+//   0 BLOCKADE   — occupying the stop-square in front of an enemy passer
+//   1 RESTRICT   — covering squares an enemy piece wants (prophylaxis)
+//   2 TRANSIT    — a piece's access to a strong square one move away
+int action_w[3] = { 6, 2, 3 };
+
 // Game-plan pricing (percent of a piece's material value): participants in
 // the search's current plan appreciate, developed spectators depreciate.
 // Learned through the registry; seeds are unit scale only.
@@ -168,6 +174,7 @@ const ParamBlock eval_params[] = {
     { "ROOK_OPEN", &ROOK_OPEN, 1 }, { "ROOK_SEMIOPEN", &ROOK_SEMIOPEN, 1 },
     { "SHIELD_BONUS", &SHIELD_BONUS, 1 },
     { "coord_w", coord_w, 5 },
+    { "action_w", action_w, 3 },
     { "PLAN_PART", &PLAN_PART, 1 }, { "PLAN_IDLE", &PLAN_IDLE, 1 },
     { "PLAN_ENGAGE", &PLAN_ENGAGE, 1 }, { "CERT_FLOOR", &CERT_FLOOR, 1 },
     { "LOGI_PLAN", &LOGI_PLAN, 1 },
