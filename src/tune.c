@@ -28,13 +28,79 @@ static int eval_white(const Board *bd) {
     return bd->side == WHITE ? s : -s;
 }
 
+// ---- L2 regularization toward the starting priors ----
+// Tuning on the engine's OWN games overweights material: in blunder-filled
+// weak games a material edge is highly predictive of the result, so pure
+// error-minimization inflates piece values (and can send eg-pawn negative).
+// A mild penalty pulling each weight back toward its starting value (textbook
+// priors, when tuning is launched from them) keeps values sane while still
+// letting the data refine them. Strength set by TUNE_REG (0 = off).
+static double reg_lambda = 0.0;
+static double *prior_flat = NULL;
+static int prior_n = 0;
+
+static void snapshot_priors(void) {
+    int tot = 0;
+    for (int b = 0; b < eval_params_n; b++) tot += eval_params[b].count;
+    prior_flat = malloc(tot * sizeof(double));
+    int k = 0;
+    for (int b = 0; b < eval_params_n; b++)
+        for (int i = 0; i < eval_params[b].count; i++)
+            prior_flat[k++] = eval_params[b].ptr[i];
+    prior_n = tot;
+    const char *r = getenv("TUNE_REG");
+    reg_lambda = r ? atof(r) : 0.03;   // mild default; TUNE_REG=0 disables
+}
+
+// Mean squared relative deviation from priors; each weight's scale is its own
+// magnitude (floored) so a 100 cp piece and a 20 cp bonus are penalized in
+// proportion, not absolutely.
+static double reg_penalty(void) {
+    if (reg_lambda <= 0 || !prior_flat) return 0;
+    double s = 0;
+    int k = 0;
+    for (int b = 0; b < eval_params_n; b++)
+        for (int i = 0; i < eval_params[b].count; i++) {
+            double prior = prior_flat[k++];
+            double scale = prior < 0 ? -prior : prior;
+            if (scale < 30) scale = 30;
+            double d = (eval_params[b].ptr[i] - prior) / scale;
+            s += d * d;
+        }
+    return reg_lambda * s;   // sum: only tuned weights deviate from prior
+}
+
 static double error_fn(double k) {
     double e = 0;
     for (int i = 0; i < n_samples; i++) {
         double diff = samples[i].result - sigmoid(k, eval_white(&samples[i].bd));
         e += diff * diff;
     }
-    return e / n_samples;
+    return e / n_samples + reg_penalty();
+}
+
+// Best sigmoid scale K for the eval as it stands right now. Eval scores do
+// not depend on K, so we evaluate every position once, then sweep K as cheap
+// arithmetic over the cached centipawns — this makes re-fitting K between
+// descent passes nearly free (one eval scan vs the descent's ~50 per pass).
+// Re-run each pass so K, not the pinned-anchor material values, carries the
+// eval's overall scale.
+static double fit_k(void) {
+    static int *cp = NULL;
+    if (!cp) cp = malloc(n_samples * sizeof(int));
+    for (int i = 0; i < n_samples; i++)
+        cp[i] = eval_white(&samples[i].bd);
+
+    double best_k = 0.5, best_e = 1e18;
+    for (double k = 0.10; k <= 3.0; k += 0.05) {
+        double e = 0;
+        for (int i = 0; i < n_samples; i++) {
+            double d = samples[i].result - sigmoid(k, cp[i]);
+            e += d * d;
+        }
+        if (e < best_e) { best_e = e; best_k = k; }
+    }
+    return best_k;
 }
 
 static int load_dataset(const char *path) {
@@ -89,6 +155,8 @@ static const char *stage_priority[] = {
 void tune_run(const char *dataset_path) {
     if (!load_dataset(dataset_path)) return;
     fprintf(stderr, "loaded %d positions\n", n_samples);
+    snapshot_priors();
+    fprintf(stderr, "regularization lambda = %.3f (TUNE_REG)\n", reg_lambda);
 
     static int tunable[64];
     memset(tunable, 0, sizeof(tunable));
@@ -106,12 +174,9 @@ void tune_run(const char *dataset_path) {
     fprintf(stderr, "stage: tuning %d of %d params (budget %d positions/30)\n",
             used, total, budget);
 
-    // Fit the sigmoid scale K on the untouched eval
-    double best_k = 0.5, best_e = error_fn(0.5);
-    for (double k = 0.55; k <= 2.0; k += 0.05) {
-        double e = error_fn(k);
-        if (e < best_e) { best_e = e; best_k = k; }
-    }
+    // Fit the sigmoid scale K on the untouched eval.
+    double best_k = fit_k();
+    double best_e = error_fn(best_k);
     fprintf(stderr, "K = %.2f, initial E = %.6f\n", best_k, best_e);
 
     // Coordinate descent, coarse steps first. A pass must cut E by a real
@@ -124,6 +189,15 @@ void tune_run(const char *dataset_path) {
         int improved = 1;
         int pass = 0;
         while (improved && pass < 30) {
+            // Re-fit K each pass. With a small dataset the curriculum tunes
+            // only a few blocks (often just material), so a frozen K forces
+            // those few values to absorb the entire eval *scale* — the pawn
+            // is pinned as the anchor, so that pressure inflates the piece/
+            // pawn ratios into nonsense (a past run reached knight ~= 20
+            // pawns). Letting K move each pass absorbs the scale, keeping
+            // descent focused on the relative values the data actually implies.
+            best_k = fit_k();
+            best_e = error_fn(best_k);
             double pass_start_e = best_e;
             improved = 0;
             pass++;
