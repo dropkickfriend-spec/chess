@@ -97,14 +97,24 @@ def main():
         pgns += [c if c.startswith("[") else "[" + c for c in chunks if c.strip()]
     print(f"total games: {len(pgns)}")
 
+    # Cap the dataset to a representative random sample. The Texel tuner is
+    # coordinate descent (O(positions x params x passes)); an unbounded 37k
+    # positions takes hours on a phone. A few thousand is plenty for a stable
+    # fit. MAX_POSITIONS overrides (0 = no cap).
+    import random
+    cap = int(os.environ.get("MAX_POSITIONS", "8000"))
     seen = set()
-    count = 0
+    rows = []
+    for pgn in pgns:
+        for fen, result in positions_from_pgn(pgn, seen):
+            rows.append(f"{fen};{result}\n")
+    if cap and len(rows) > cap:
+        random.seed(1234)                     # reproducible sample
+        rows = random.sample(rows, cap)
+        print(f"sampled {cap} of {len(seen)} unique positions (MAX_POSITIONS)")
     with open(out_path, "w") as out:
-        for pgn in pgns:
-            for fen, result in positions_from_pgn(pgn, seen):
-                out.write(f"{fen};{result}\n")
-                count += 1
-    print(f"wrote {count} unique quiet positions to {out_path}")
+        out.writelines(rows)
+    print(f"wrote {len(rows)} quiet positions to {out_path}")
 
 
 if __name__ == "__main__":
