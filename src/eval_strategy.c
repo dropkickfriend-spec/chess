@@ -52,16 +52,32 @@ static int eval_material(const Board *bd, int *phase_out) {
 }
 
 // Union of all of a side's piece attacks (used by RESTRICTION/TRANSIT).
-static U64 side_attacks(const Board *bd, int side) {
-    int base = side == WHITE ? WP : BP;
-    U64 occ = bd->occ[BOTH], att = 0, bb;
-    bb = bd->bb[base];       while (bb) { int s = LSB(bb); POP_BIT(bb, s); att |= pawn_attacks[side][s]; }
-    bb = bd->bb[base + 1];   while (bb) { int s = LSB(bb); POP_BIT(bb, s); att |= knight_attacks[s]; }
-    bb = bd->bb[base + 2];   while (bb) { int s = LSB(bb); POP_BIT(bb, s); att |= get_bishop_attacks(s, occ); }
-    bb = bd->bb[base + 3];   while (bb) { int s = LSB(bb); POP_BIT(bb, s); att |= get_rook_attacks(s, occ); }
-    bb = bd->bb[base + 4];   while (bb) { int s = LSB(bb); POP_BIT(bb, s); att |= get_queen_attacks(s, occ); }
-    bb = bd->bb[base + 5];   if (bb) att |= king_attacks[LSB(bb)];
-    return att;
+// Per-position attack cache. The same piece's attack set (under the full
+// occupancy) was previously recomputed independently in PIECE_ACTIVITY,
+// ATTACK_POTENTIAL, COORDINATION, RESTRICTION, TRANSIT and side_attacks —
+// 4-5 magic sliding lookups per piece, per eval. Computing it once and
+// sharing it is output-identical and removes the bulk of the eval's cost.
+typedef struct {
+    U64 att[64];        // attack set of the piece occupying each square
+    U64 side_att[2];    // union of each side's attacks (pawns..king)
+} AttackInfo;
+
+// att[sq] is written for every occupied square; empty squares are never read
+// by any consumer, so the array needs no zeroing.
+static void compute_attacks(const Board *bd, AttackInfo *ai) {
+    U64 occ = bd->occ[BOTH];
+    ai->side_att[WHITE] = ai->side_att[BLACK] = 0;
+    for (int side = WHITE; side <= BLACK; side++) {
+        int base = side == WHITE ? WP : BP;
+        U64 u = 0, bb, a;
+        bb = bd->bb[base];     while (bb) { int s = LSB(bb); POP_BIT(bb, s); a = pawn_attacks[side][s]; ai->att[s] = a; u |= a; }
+        bb = bd->bb[base + 1]; while (bb) { int s = LSB(bb); POP_BIT(bb, s); a = knight_attacks[s];      ai->att[s] = a; u |= a; }
+        bb = bd->bb[base + 2]; while (bb) { int s = LSB(bb); POP_BIT(bb, s); a = get_bishop_attacks(s, occ); ai->att[s] = a; u |= a; }
+        bb = bd->bb[base + 3]; while (bb) { int s = LSB(bb); POP_BIT(bb, s); a = get_rook_attacks(s, occ);   ai->att[s] = a; u |= a; }
+        bb = bd->bb[base + 4]; while (bb) { int s = LSB(bb); POP_BIT(bb, s); a = get_queen_attacks(s, occ);  ai->att[s] = a; u |= a; }
+        bb = bd->bb[base + 5]; if (bb)    { int s = LSB(bb);                 a = king_attacks[s];            ai->att[s] = a; u |= a; }
+        ai->side_att[side] = u;
+    }
 }
 
 extern int action_w[3];
@@ -98,13 +114,12 @@ static int eval_blockade(const Board *bd, int phase) {
 // Strategy: RESTRICTION — prophylaxis. Count the squares each enemy piece
 // would like to move to that WE already control; denying an enemy piece its
 // squares is exactly the positional judgement the engine otherwise lacks.
-static int eval_restriction(const Board *bd, int phase) {
+static int eval_restriction(const Board *bd, int phase, const AttackInfo *ai) {
     (void)phase;
     int score = 0;
-    U64 occ = bd->occ[BOTH];
     for (int side = WHITE; side <= BLACK; side++) {
         int sign = side == WHITE ? 1 : -1;
-        U64 our_att = side_attacks(bd, side);
+        U64 our_att = ai->side_att[side];
         int ebase = side == WHITE ? BP : WP;
         U64 enemy_occ = bd->occ[!side];
         int restricted = 0;
@@ -112,13 +127,7 @@ static int eval_restriction(const Board *bd, int phase) {
             U64 bb = bd->bb[ebase + pt];
             while (bb) {
                 int s = LSB(bb); POP_BIT(bb, s);
-                U64 tgt;
-                switch (pt) {
-                    case 1: tgt = knight_attacks[s]; break;
-                    case 2: tgt = get_bishop_attacks(s, occ); break;
-                    case 3: tgt = get_rook_attacks(s, occ); break;
-                    default: tgt = get_queen_attacks(s, occ); break;
-                }
+                U64 tgt = ai->att[s];                    // this piece's attacks
                 restricted += COUNT(tgt & ~enemy_occ & our_att);
             }
         }
@@ -130,12 +139,11 @@ static int eval_restriction(const Board *bd, int phase) {
 // Strategy: TRANSIT — a square's worth as a springboard: our minor pieces
 // that can hop to a strong central square next move (safe from enemy pawns)
 // are well-routed. Values the square as a route, not just a destination.
-static int eval_transit(const Board *bd, int phase) {
+static int eval_transit(const Board *bd, int phase, const AttackInfo *ai) {
     (void)phase;
     const U64 CENTER = (1ULL<<27)|(1ULL<<28)|(1ULL<<35)|(1ULL<<36)   // d4 e4 d5 e5
                      | (1ULL<<26)|(1ULL<<29)|(1ULL<<34)|(1ULL<<37);  // c4 f4 c5 f5
     int score = 0;
-    U64 occ = bd->occ[BOTH];
     for (int side = WHITE; side <= BLACK; side++) {
         int sign = side == WHITE ? 1 : -1;
         int base = side == WHITE ? WP : BP;
@@ -147,10 +155,10 @@ static int eval_transit(const Board *bd, int phase) {
         int transit = 0;
         U64 bb = bd->bb[base + 1];   // knights
         while (bb) { int s = LSB(bb); POP_BIT(bb, s);
-            transit += COUNT(knight_attacks[s] & ~own & good); }
+            transit += COUNT(ai->att[s] & ~own & good); }
         bb = bd->bb[base + 2];       // bishops
         while (bb) { int s = LSB(bb); POP_BIT(bb, s);
-            transit += COUNT(get_bishop_attacks(s, occ) & ~own & good); }
+            transit += COUNT(ai->att[s] & ~own & good); }
         score += sign * action_w[2] * transit;
     }
     return score;
@@ -235,27 +243,26 @@ static int eval_pawn_structure(const Board *bd, int phase) {
 }
 
 // Strategy: PIECE_ACTIVITY — mobility and positioning
-static int eval_piece_activity(const Board *bd, int phase) {
+static int eval_piece_activity(const Board *bd, int phase, const AttackInfo *ai) {
     int mg = 0, eg = 0;
-    U64 occ = bd->occ[BOTH];
     U64 wp = bd->bb[WP], bp = bd->bb[BP];
-    
+
     for (int side = WHITE; side <= BLACK; side++) {
         int sign = side == WHITE ? 1 : -1;
         int base = side == WHITE ? WP : BP;
         U64 own = bd->occ[side];
         U64 own_pawns = side == WHITE ? wp : bp;
-        
+
         // Knights
         U64 bb = bd->bb[base + 1];
         while (bb) {
             int sq = LSB(bb); POP_BIT(bb, sq);
-            U64 att = knight_attacks[sq];
+            U64 att = ai->att[sq];
             int mob = COUNT(att & ~own) - 4;
             mg += sign * mob * 4;
             eg += sign * mob * 4;
         }
-        
+
         // Bishops: mobility plus the pawn-complex test — a bishop is worth
         // more when the opponent's pawns sit on its colour (fixed targets)
         // and less when our own pawns share its colour (bad bishop).
@@ -263,7 +270,7 @@ static int eval_piece_activity(const Board *bd, int phase) {
         bb = bd->bb[base + 2];
         while (bb) {
             int sq = LSB(bb); POP_BIT(bb, sq);
-            U64 att = get_bishop_attacks(sq, occ);
+            U64 att = ai->att[sq];
             int mob = COUNT(att & ~own) - 6;
             mg += sign * mob * 3;
             eg += sign * mob * 3;
@@ -275,12 +282,12 @@ static int eval_piece_activity(const Board *bd, int phase) {
             mg += sign * (targets * 2 - blockers * 3);
             eg += sign * (targets * 3 - blockers * 5);
         }
-        
+
         // Rooks
         bb = bd->bb[base + 3];
         while (bb) {
             int sq = LSB(bb); POP_BIT(bb, sq);
-            U64 att = get_rook_attacks(sq, occ);
+            U64 att = ai->att[sq];
             int mob = COUNT(att & ~own) - 7;
             mg += sign * mob * 2;
             eg += sign * mob * 4;
@@ -341,44 +348,24 @@ static int eval_king_safety(const Board *bd, int phase) {
 }
 
 // Strategy: ATTACK_POTENTIAL — king attack bonus
-static int eval_attack_potential(const Board *bd, int phase) {
+static int eval_attack_potential(const Board *bd, int phase, const AttackInfo *ai) {
     int atk_units[2] = { 0, 0 };
-    U64 occ = bd->occ[BOTH];
-    
+
     U64 king_zone[2];
     king_zone[WHITE] = bd->bb[WK] ? king_attacks[LSB(bd->bb[WK])] | bd->bb[WK] : 0;
     king_zone[BLACK] = bd->bb[BK] ? king_attacks[LSB(bd->bb[BK])] | bd->bb[BK] : 0;
-    
+
     for (int side = WHITE; side <= BLACK; side++) {
         int base = side == WHITE ? WP : BP;
         U64 enemy_zone = king_zone[!side];
-        
-        // Knight attacks
-        U64 bb = bd->bb[base + 1];
-        while (bb) {
-            int sq = LSB(bb); POP_BIT(bb, sq);
-            atk_units[side] += king_atk_weight[1] * COUNT(knight_attacks[sq] & enemy_zone);
-        }
-        
-        // Bishop attacks
-        bb = bd->bb[base + 2];
-        while (bb) {
-            int sq = LSB(bb); POP_BIT(bb, sq);
-            atk_units[side] += king_atk_weight[2] * COUNT(get_bishop_attacks(sq, occ) & enemy_zone);
-        }
-        
-        // Rook attacks
-        bb = bd->bb[base + 3];
-        while (bb) {
-            int sq = LSB(bb); POP_BIT(bb, sq);
-            atk_units[side] += king_atk_weight[3] * COUNT(get_rook_attacks(sq, occ) & enemy_zone);
-        }
-        
-        // Queen attacks
-        bb = bd->bb[base + 4];
-        while (bb) {
-            int sq = LSB(bb); POP_BIT(bb, sq);
-            atk_units[side] += king_atk_weight[4] * COUNT(get_queen_attacks(sq, occ) & enemy_zone);
+
+        // Knight, bishop, rook, queen attacks on the enemy king zone
+        for (int pt = 1; pt <= 4; pt++) {
+            U64 bb = bd->bb[base + pt];
+            while (bb) {
+                int sq = LSB(bb); POP_BIT(bb, sq);
+                atk_units[side] += king_atk_weight[pt] * COUNT(ai->att[sq] & enemy_zone);
+            }
         }
     }
     
@@ -402,7 +389,7 @@ static int eval_attack_potential(const Board *bd, int phase) {
 // pieces executing it scores highest, and cramping them hurts most. Pawn
 // blockage stays full price (slow walls), piece blockage half (a friend can
 // vacate next move). LOGI_PLAN is a learned registry knob.
-static int eval_pawn_logistics(const Board *bd, int phase) {
+static int eval_pawn_logistics(const Board *bd, int phase, const AttackInfo *ai) {
     int mg = 0, eg = 0;
     U64 occ = bd->occ[BOTH];
 
@@ -423,17 +410,14 @@ static int eval_pawn_logistics(const Board *bd, int phase) {
             U64 bb = bd->bb[base + pt];
             while (bb) {
                 int sq = LSB(bb); POP_BIT(bb, sq);
-                U64 a_now, a_np, a_fr;
+                U64 a_now = ai->att[sq], a_np, a_fr;   // a_now: full-occ (cached)
                 if (pt == 2) {
-                    a_now = get_bishop_attacks(sq, occ);
                     a_np  = get_bishop_attacks(sq, occ_np);
                     a_fr  = get_bishop_attacks(sq, occ_free);
                 } else if (pt == 3) {
-                    a_now = get_rook_attacks(sq, occ);
                     a_np  = get_rook_attacks(sq, occ_np);
                     a_fr  = get_rook_attacks(sq, occ_free);
                 } else {
-                    a_now = get_queen_attacks(sq, occ);
                     a_np  = get_queen_attacks(sq, occ_np);
                     a_fr  = get_queen_attacks(sq, occ_free);
                 }
@@ -671,10 +655,9 @@ extern int coord_w[COORD_N];
 //   whole base scaled by (10 + coord_w[4]) / 10 — following the game plan
 //   amplifies everything else the piece contributes. All five weights are
 //   learned from outcomes through the tuning registry.
-static int eval_coordination(const Board *bd, int phase) {
+static int eval_coordination(const Board *bd, int phase, const AttackInfo *ai) {
     (void)phase;
     int score = 0;
-    U64 occ = bd->occ[BOTH];
 
     for (int side = WHITE; side <= BLACK; side++) {
         int sign = side == WHITE ? 1 : -1;
@@ -700,14 +683,7 @@ static int eval_coordination(const Board *bd, int phase) {
             U64 b = bd->bb[base_i + pt];
             while (b && n_pieces < 16) {
                 int sq = LSB(b); POP_BIT(b, sq);
-                U64 att;
-                switch (pt) {
-                    case 1: att = knight_attacks[sq]; break;
-                    case 2: att = get_bishop_attacks(sq, occ); break;
-                    case 3: att = get_rook_attacks(sq, occ); break;
-                    case 4: att = get_queen_attacks(sq, occ); break;
-                    default: att = king_attacks[sq]; break;
-                }
+                U64 att = ai->att[sq];
                 att_of[n_pieces] = att;
                 sq_of[n_pieces] = sq;
                 pt_of[n_pieces] = pt;
@@ -759,23 +735,25 @@ static int eval_coordination(const Board *bd, int phase) {
 // and the phase-weighted mean of enabled weights.
 static void gather_raw(const Board *bd, int *phase_out, int raw[STRAT_COUNT]) {
     int phase;
+    AttackInfo ai;
+    compute_attacks(bd, &ai);   // one attack sweep shared by every strategy
     raw[STRAT_MATERIAL]            = eval_material(bd, &phase);
     raw[STRAT_PAWN_STRUCTURE]      = eval_pawn_structure(bd, phase);
-    raw[STRAT_PIECE_ACTIVITY]      = eval_piece_activity(bd, phase);
+    raw[STRAT_PIECE_ACTIVITY]      = eval_piece_activity(bd, phase, &ai);
     raw[STRAT_KING_SAFETY_OPENING] = eval_king_safety(bd, phase);
-    raw[STRAT_ATTACK_POTENTIAL]    = eval_attack_potential(bd, phase);
-    raw[STRAT_DEFENDER_LOGISTICS]  = eval_pawn_logistics(bd, phase);
+    raw[STRAT_ATTACK_POTENTIAL]    = eval_attack_potential(bd, phase, &ai);
+    raw[STRAT_DEFENDER_LOGISTICS]  = eval_pawn_logistics(bd, phase, &ai);
     raw[STRAT_DEVELOPMENT]         = eval_development(bd, phase);
     raw[STRAT_CENTER_CONTROL]      = eval_center_control(bd, phase);
     raw[STRAT_KING_ACTIVITY]       = eval_king_activity(bd, phase);
     raw[STRAT_OPPOSITION]          = eval_opposition(bd, phase);
     raw[STRAT_PAWN_PROMOTION]      = eval_pawn_promotion(bd, phase);
-    raw[STRAT_COORDINATION]        = eval_coordination(bd, phase);
+    raw[STRAT_COORDINATION]        = eval_coordination(bd, phase, &ai);
     raw[STRAT_GAME_PLAN]           = eval_game_plan(bd, phase);
     raw[STRAT_SQUARE_VALUE]        = eval_square_value(bd, phase);
     raw[STRAT_BLOCKADE]            = eval_blockade(bd, phase);
-    raw[STRAT_RESTRICTION]         = eval_restriction(bd, phase);
-    raw[STRAT_TRANSIT]             = eval_transit(bd, phase);
+    raw[STRAT_RESTRICTION]         = eval_restriction(bd, phase, &ai);
+    raw[STRAT_TRANSIT]             = eval_transit(bd, phase, &ai);
 
     // A queen is worth less when someone is getting mated — yours if the
     // attack is on you, theirs if you can throw it at their king. Material's
@@ -916,3 +894,4 @@ int eval_explain(const Board *bd, const StrategyWeights *w,
         total += raw_out[i] * eff_out[i];
     return (int)total;
 }
+
