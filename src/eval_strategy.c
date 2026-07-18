@@ -540,7 +540,21 @@ static int eval_center_control(const Board *bd, int phase) {
     return mg * phase / 24;
 }
 
-// Strategy: KING_ACTIVITY — endgame king centralisation and pawn proximity.
+// Centre-manhattan distance: 0 in the middle, 6 in the corners. Driving a
+// bare king to a high-CMD square is how K+Q / K+R vs K is won.
+static const int centre_dist[64] = {
+    6, 5, 4, 3, 3, 4, 5, 6,
+    5, 4, 3, 2, 2, 3, 4, 5,
+    4, 3, 2, 1, 1, 2, 3, 4,
+    3, 2, 1, 0, 0, 1, 2, 3,
+    3, 2, 1, 0, 0, 1, 2, 3,
+    4, 3, 2, 1, 1, 2, 3, 4,
+    5, 4, 3, 2, 2, 3, 4, 5,
+    6, 5, 4, 3, 3, 4, 5, 6,
+};
+
+// Strategy: KING_ACTIVITY — endgame king centralisation, pawn proximity, and
+// bare-king mating drive.
 static int eval_king_activity(const Board *bd, int phase) {
     if (!bd->bb[WK] || !bd->bb[BK]) return 0;
     int wk = LSB(bd->bb[WK]), bk = LSB(bd->bb[BK]);
@@ -554,6 +568,18 @@ static int eval_king_activity(const Board *bd, int phase) {
         int sq = LSB(p); POP_BIT(p, sq);
         eg += 2 * (CHEB(bk, sq) - CHEB(wk, sq));
     }
+
+    // Bare-king mate drive: if one side has only its king and the other holds
+    // a rook or queen, the flat material lead gives the search no gradient to
+    // follow, so it shuffles until the 50-move rule. Reward pushing the lone
+    // king to a corner and marching our own king up to it.
+    U64 w_men = bd->bb[WN]|bd->bb[WB]|bd->bb[WR]|bd->bb[WQ]|bd->bb[WP];
+    U64 b_men = bd->bb[BN]|bd->bb[BB_]|bd->bb[BR]|bd->bb[BQ]|bd->bb[BP];
+    if (!b_men && (bd->bb[WR] | bd->bb[WQ]))
+        eg += 15 * centre_dist[bk] + 5 * (7 - CHEB(wk, bk));
+    else if (!w_men && (bd->bb[BR] | bd->bb[BQ]))
+        eg -= 15 * centre_dist[wk] + 5 * (7 - CHEB(bk, wk));
+
     return eg * (24 - phase) / 24;
 }
 
