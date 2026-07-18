@@ -51,6 +51,29 @@ OUTCOME = {
 }
 
 
+def material_sane(path):
+    """Guard the canonical brain: a retune on a bad/degenerate dataset must
+    never be adopted. With the pawn anchored at 100, piece values must stay
+    near textbook — knight/bishop ~2.5-5.5, rook ~4-7.5, queen ~7-14 pawns —
+    and the endgame pawn must stay positive."""
+    mg, eg0 = {}, None
+    try:
+        with open(path) as f:
+            for line in f:
+                p = line.split()
+                if len(p) == 3 and p[0] == "material_mg+1":
+                    mg[int(p[1])] = int(p[2])
+                elif len(p) == 3 and p[0] == "material_eg" and p[1] == "0":
+                    eg0 = int(p[2])
+    except OSError:
+        return False
+    n, b, r, q = mg.get(0), mg.get(1), mg.get(2), mg.get(3)
+    if None in (n, b, r, q) or eg0 is None:
+        return False
+    return (250 <= n <= 550 and 250 <= b <= 550
+            and 400 <= r <= 750 and 700 <= q <= 1400 and eg0 > 0)
+
+
 def load_state():
     try:
         with open(LADDER) as f:
@@ -130,10 +153,21 @@ for it in range(1, ITERATIONS + 1):
              open(f"{TMP_DIR}/retune.log", "w") as err:
             subprocess.run(["./chess", "tune", "data/texel_dataset.txt"],
                            stdout=out, stderr=err, env=BOOT_ENV, check=False)
-        os.replace("data/learned_values.txt.new", "data/learned_values.txt")
-        subprocess.run(["python3", "tools/fit_strategy_weights.py", "--apply"],
-                       env=BOOT_ENV, check=False)
-        subprocess.run(["python3", "tools/upload_learned.py"], check=False)
+        # Only adopt the retune if its material stayed sane — a degenerate
+        # dataset must not be allowed to re-corrupt the canonical brain (this
+        # is exactly the runaway that produced knight ~= 20 pawns before).
+        if material_sane("data/learned_values.txt.new"):
+            os.replace("data/learned_values.txt.new", "data/learned_values.txt")
+            subprocess.run(["python3", "tools/fit_strategy_weights.py", "--apply"],
+                           env=BOOT_ENV, check=False)
+            subprocess.run(["python3", "tools/upload_learned.py"], check=False)
+        else:
+            print("!!! checkpoint REJECTED: retuned material out of sane range; "
+                  "keeping the current brain (see retune.log)", flush=True)
+            try:
+                os.remove("data/learned_values.txt.new")
+            except OSError:
+                pass
 
 print(f"\nladder run done: rung SF skill {st['skill']}, "
       f"{st['games_total']} ladder games, "
