@@ -200,6 +200,11 @@
                 <div class="stat-card"><div class="stat-value" id="score">0%</div><div class="stat-label">Score</div></div>
                 <div class="stat-card"><div class="stat-value" id="rung">–</div><div class="stat-label">Ladder Rung (SF skill)</div></div>
             </div>
+            <div style="color:#00d4ff;font-size:0.9em;margin:14px 0 4px">Record by Stockfish skill level</div>
+            <div class="match-history"><table id="levelStats">
+                <thead><tr><th>SF skill</th><th>W</th><th>D</th><th>L</th><th>Score</th><th>Games</th></tr></thead>
+                <tbody></tbody>
+            </table></div>
         </div>
 
         <div class="section">
@@ -419,11 +424,14 @@
                 if (a.promo) rec.promo = a.promo.toUpperCase();
                 moves.push(rec);
             }
-            const us = 'chess-bb', them = 'Stockfish (skill 20)';
+            const skill = (live && live.sf_skill != null) ? live.sf_skill
+                        : (row.sf_skill != null ? row.sf_skill : null);
+            const us = 'chess-bb';
+            const them = 'Stockfish' + (skill != null ? ` skill ${skill}` : '');
             return {
                 white: row.our_color === 'white' ? us : them,
                 black: row.our_color === 'white' ? them : us,
-                result: row.result, live: true,
+                result: row.result, live: true, skill,
                 date: (row.created_at || '').slice(0, 16).replace('T', ' '),
                 moves
             };
@@ -434,12 +442,41 @@
         async function fetchFinishedGames() {
             const rows = await fetchJSON(
                 `${SUPABASE_URL}/rest/v1/chessbb_games` +
-                `?select=our_color,result,uci,strat_series,created_at&uci=not.is.null` +
+                `?select=our_color,result,uci,strat_series,sf_skill,created_at&uci=not.is.null` +
                 `&order=created_at.desc&limit=40`,
                 { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
             if (!rows) return [];
             return rows.map(r => { const g = buildLiveGame(r, r); g.live = true; return g; })
                        .filter(g => g.moves.length);
+        }
+
+        // Win/draw/loss tally per Stockfish skill level, from every game's
+        // light columns (no PGN) so the fetch stays cheap.
+        async function renderLevelStats() {
+            const rows = await fetchJSON(
+                `${SUPABASE_URL}/rest/v1/chessbb_games` +
+                `?select=sf_skill,result,our_color&order=created_at.desc&limit=5000`,
+                { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
+            const tbody = document.querySelector('#levelStats tbody');
+            if (!rows || !rows.length) { tbody.innerHTML =
+                '<tr><td colspan="6">No games yet</td></tr>'; return; }
+            const by = {};
+            rows.forEach(r => {
+                const k = r.sf_skill == null ? 'elo/max' : r.sf_skill;
+                const t = by[k] || (by[k] = { w: 0, d: 0, l: 0 });
+                if (r.result === '1/2-1/2') t.d++;
+                else if ((r.result === '1-0') === (r.our_color === 'white')) t.w++;
+                else t.l++;
+            });
+            const keys = Object.keys(by).sort((a, b) =>
+                (a === 'elo/max' ? 99 : +a) - (b === 'elo/max' ? 99 : +b));
+            tbody.innerHTML = keys.map(k => {
+                const t = by[k], n = t.w + t.d + t.l;
+                const pct = n ? (100 * (t.w + t.d / 2) / n).toFixed(0) : 0;
+                return `<tr><td><b>${k}</b></td>` +
+                    `<td class="pos">${t.w}</td><td>${t.d}</td><td class="neg">${t.l}</td>` +
+                    `<td>${pct}%</td><td>${n}</td></tr>`;
+            }).join('');
         }
 
         // The viewer's game list = the live game (if streaming) on top of the
@@ -490,6 +527,7 @@
                     'Between games — recent weight snapshots (waiting for a live game)';
             }
             updateMatchTable(matches);
+            renderLevelStats();
             document.getElementById('timestamp').textContent = new Date().toLocaleString();
         }
 
@@ -1187,7 +1225,7 @@
 
         async function pollLive() {
             const rows = await fetchJSON(
-                `${SUPABASE_URL}/rest/v1/live_game?id=eq.1&select=our_color,uci,evals,strat_series,plans,ply,updated_at`,
+                `${SUPABASE_URL}/rest/v1/live_game?id=eq.1&select=our_color,uci,evals,strat_series,plans,sf_skill,ply,updated_at`,
                 { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
             const r = rows && rows[0];
             if (!r || !r.uci) {
@@ -1220,8 +1258,9 @@
             }
             const live = age !== null && age < 120;   // actively streaming now
             document.getElementById('liveStatus').textContent = live
-                ? `▶ LIVE in Termux · chess-bb as ${r.our_color} · ply ${r.ply} · ` +
-                  `updated ${age.toFixed(0)}s ago · eval (White POV) per move`
+                ? `▶ LIVE in Termux · chess-bb as ${r.our_color}` +
+                  (r.sf_skill != null ? ` vs SF skill ${r.sf_skill}` : '') +
+                  ` · ply ${r.ply} · updated ${age.toFixed(0)}s ago · eval (White POV) per move`
                 : 'No live game — start one in Termux (python3 tools/match.py … --upload)';
 
             // The live game sits on top of the finished-game history. It

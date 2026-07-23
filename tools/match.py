@@ -103,6 +103,7 @@ def upload_match(sf_skill, sf_elo, movetime, wins, draws, losses, games):
         "uci": g.get("uci"),
         "evals": g.get("evals"),
         "strat_series": g.get("strat_series"),
+        "sf_skill": sf_skill,
     } for g in games])
     print(f"uploaded match {match_id} ({len(games)} games) to Supabase")
 
@@ -167,7 +168,7 @@ def strat_contribs(engine_path, fen, env):
     return [vals.get(s, 0) for s in STRAT_ORDER]
 
 
-def make_live_cb(base_url, key, our_color, engine_path=None, env=None):
+def make_live_cb(base_url, key, our_color, engine_path=None, env=None, sf_skill=None):
     """Stream the in-progress game to the live_game row after each move
     (throttled to ~1/s) so dashboards update per move. On our moves also
     records the per-move strategy contribution (the weight chain re-priced
@@ -199,6 +200,7 @@ def make_live_cb(base_url, key, our_color, engine_path=None, env=None):
                 "evals": json.dumps(evals),
                 "strat_series": json.dumps(series),
                 "plans": json.dumps(plans or []),
+                "sf_skill": sf_skill,
                 "ply": board.ply(),
                 "updated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
             }], upsert=True)
@@ -265,7 +267,8 @@ def main():
                 if b_url and b_key:
                     live_cb = make_live_cb(b_url.rstrip("/"), b_key,
                                            "white" if we_are_white else "black",
-                                           args.engine, os.environ.copy())
+                                           args.engine, os.environ.copy(),
+                                           sf_skill=args.skill)
             board, evals = play_game(white, black, args.movetime, live_cb=live_cb)
             strat_series = getattr(live_cb, "series", []) if live_cb else []
 
