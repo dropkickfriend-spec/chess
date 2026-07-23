@@ -143,6 +143,19 @@ def main():
         w = [v / mean for v in w]
     w = [max(v, 0.05) for v in w]
 
+    # Guardrail: MATERIAL and its positional partner SQUARE_VALUE must stay
+    # first-class terms. A fit on noisy games (or, historically, games where
+    # material was inflated) can crush MATERIAL's weight toward the 0.05 floor,
+    # which makes the engine discount material and sacrifice pieces — exactly
+    # the failure that had MATERIAL at 0.09 and losing to Stockfish skill 3.
+    # Never let these core terms fall far below the average strategy (mean 1.0).
+    CORE_FLOOR = 0.5
+    for core in ("MATERIAL", "SQUARE_VALUE"):
+        j = STRATS.index(core)
+        if w[j] < CORE_FLOOR:
+            print(f"  guardrail: raising {core} weight {w[j]:.3f} -> {CORE_FLOOR}")
+            w[j] = CORE_FLOOR
+
     print(f"\nfitted weights (E = {err:.6f}):")
     for name, v in sorted(zip(STRATS, w), key=lambda t: -t[1]):
         print(f"  {name:20s} {v:.4f}")
