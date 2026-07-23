@@ -125,13 +125,14 @@ def play_game(white, black, movetime, max_plies=1000, live_cb=None):
 STRAT_ORDER = ["DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
                "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE",
                "DEFENDER_LOGISTICS", "KING_ACTIVITY", "PAWN_PROMOTION",
-               "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN"]
+               "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN",
+               "SQUARE_VALUE", "BLOCKADE", "RESTRICTION", "TRANSIT"]
 
 
 def strat_contribs(engine_path, fen, env):
     """Per-strategy weighted contribution (raw x effective weight) for one
-    position, via the engine's evalfens mode. Returns 13 ints in
-    STRAT_ORDER, or None on any failure."""
+    position, via the engine's evalfens mode. Returns one int per strategy in
+    STRAT_ORDER (all 17), or None on any failure."""
     try:
         p = subprocess.run([engine_path, "evalfens"], input=fen + "\n",
                            capture_output=True, text=True, env=env, timeout=5)

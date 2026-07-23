@@ -452,7 +452,7 @@
             let history = await fetchWeightHistory();
             let current = weightsFile.current || [];
             if (history && history.length) {
-                history = [new Array(11).fill(1.0), ...history];  // start at defaults
+                history = [new Array(STRATEGY_NAMES.length).fill(1.0), ...history];  // start at defaults
                 current = history[history.length - 1];
             } else {
                 history = weightsFile.history || [];
@@ -1097,7 +1097,12 @@
             ctx.beginPath(); ctx.moveTo(pad, y(0)); ctx.lineTo(W - pad, y(0)); ctx.stroke();
             ctx.setLineDash([]);
 
-            STRATEGY_NAMES.forEach((name, s) => {
+            // Only plot as many strategies as the data actually carries —
+            // historic rows streamed 13 values, current ones stream all 17,
+            // so deriving the count from the data avoids phantom flat lines.
+            const nStrat = Math.min(STRATEGY_NAMES.length,
+                Math.max(...series.map(r => (r ? r.length : 0))));
+            for (let s = 0; s < nStrat; s++) {
                 ctx.strokeStyle = STRATEGY_COLORS[s];
                 ctx.lineWidth = 2;
                 ctx.beginPath();
@@ -1106,7 +1111,7 @@
                     i === 0 ? ctx.moveTo(x(i), y(v)) : ctx.lineTo(x(i), y(v));
                 });
                 ctx.stroke();
-            });
+            }
 
             ctx.fillStyle = '#b0b0b0';
             ctx.font = '12px sans-serif';
