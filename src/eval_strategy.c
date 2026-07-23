@@ -23,6 +23,8 @@ extern int king_atk_weight[6];
 extern int CHEB(int a, int b);
 extern U64 plan_squares[2];        // search.c: the current game plan
 extern int LOGI_PLAN;              // eval.c: plan-blockage price multiplier
+extern int LINE_KING, LINE_HEAVY;  // eval.c: line-clearance toward king / heavy
+extern int SQV_PLAN;               // eval.c: square-value plan amplifier
 
 static const int phase_w[6] = { 0, 1, 1, 2, 4, 0 };
 
@@ -173,15 +175,23 @@ static int eval_square_value(const Board *bd, int phase) {
     int mg = 0, eg = 0;
     for (int side = WHITE; side <= BLACK; side++) {
         int sign = side == WHITE ? 1 : -1;
+        U64 plan = plan_squares[side];
         for (int pt = 0; pt < 6; pt++) {
             U64 bb = bd->bb[side * 6 + pt];
             while (bb) {
                 int sq = LSB(bb); POP_BIT(bb, sq);
                 int idx = side == WHITE ? W_IDX(sq) : B_IDX(sq);
-                mg += sign * pst_mg[pt][idx];
-                if (pt == 0)      eg += sign * pawn_eg[idx];
-                else if (pt == 5) eg += sign * king_eg[idx];
-                else              eg += sign * pst_mg[pt][idx];
+                int pmg = pst_mg[pt][idx];
+                int peg = pt == 0 ? pawn_eg[idx] : pt == 5 ? king_eg[idx]
+                                                           : pst_mg[pt][idx];
+                // Context: the same square is worth more when the piece on it
+                // serves the plan the search is executing (SQV_PLAN percent).
+                if (plan && (plan & (1ULL << sq))) {
+                    pmg = pmg * (10 + SQV_PLAN) / 10;
+                    peg = peg * (10 + SQV_PLAN) / 10;
+                }
+                mg += sign * pmg;
+                eg += sign * peg;
             }
         }
     }
@@ -402,6 +412,12 @@ static int eval_pawn_logistics(const Board *bd, int phase, const AttackInfo *ai)
         U64 occ_free = occ & ~own;         // all our men lifted
         U64 plan = plan_squares[side];
 
+        // Line-clearance targets: a ray opened by moving our own blockers is
+        // worth more if it would bear on the enemy king zone or a heavy piece.
+        int ek = LSB(bd->bb[(!side) * 6 + 5]);
+        U64 ekzone = king_attacks[ek] | (1ULL << ek);
+        U64 eheavy = bd->bb[(!side) * 6 + 3] | bd->bb[(!side) * 6 + 4];
+
         // Sliders: latent squares gained if own men stepped aside; the
         // blockage cost scales up when the piece is a plan participant or
         // its denied squares lie on the plan's routes.
@@ -436,6 +452,13 @@ static int eval_pawn_logistics(const Board *bd, int phase, const AttackInfo *ai)
                     cmg = cmg * (10 + LOGI_PLAN) / 10;
                     ceg = ceg * (10 + LOGI_PLAN) / 10;
                 }
+                // Target-value clearance: the blocked ray, once opened, would
+                // bear on the enemy king zone or a heavy piece — so the men
+                // in the way are costlier to leave standing there.
+                if (denied & ekzone) { cmg += LINE_KING; ceg += LINE_KING / 2; }
+                U64 dh = denied & eheavy;
+                if (dh) { int n = COUNT(dh);
+                    cmg += LINE_HEAVY * n; ceg += LINE_HEAVY * n / 2; }
                 mg -= sign * cmg;
                 eg -= sign * ceg;
             }
@@ -638,11 +661,12 @@ extern int plan_certainty;
 // Strategy: GAME_PLAN — lookahead determines current piece worth. The last
 // completed search depth's principal variation IS the game plan for this
 // exact position; the next iteration's eval matches every piece against it.
-// Participants (standing on their side's plan squares) appreciate by
-// PLAN_PART percent of their material value; developed pieces in nobody's
-// plan are spectators and depreciate by PLAN_IDLE percent. No averages —
-// the plan is recomputed from scratch each search, unique per position.
-static int eval_game_plan(const Board *bd, int phase) {
+// A piece is priced by its DEGREE of involvement in the plan, not a binary
+// membership: standing on its side's plan square counts double, and a piece
+// whose attacks bear on the plan's squares (executing/supporting the line)
+// adds another degree. Developed pieces in nobody's plan depreciate. No
+// averages — the plan is recomputed from scratch each search per position.
+static int eval_game_plan(const Board *bd, int phase, const AttackInfo *ai) {
     (void)phase;
     U64 plan_all = plan_squares[WHITE] | plan_squares[BLACK];
     if (!plan_all) return 0;   // no lookahead yet (depth 1, tune, tooling)
@@ -651,13 +675,17 @@ static int eval_game_plan(const Board *bd, int phase) {
     for (int side = WHITE; side <= BLACK; side++) {
         int sign = side == WHITE ? 1 : -1;
         int base = side == WHITE ? WP : BP;
+        U64 plan = plan_squares[side];
         for (int pt = 0; pt <= 5; pt++) {
             int val = pt == 5 ? 350 : material_mg[pt];  // king plans like a minor
             U64 bb = bd->bb[base + pt];
             while (bb) {
                 int sq = LSB(bb); POP_BIT(bb, sq);
-                if (plan_squares[side] & (1ULL << sq))
-                    score += sign * val * PLAN_PART / 100;
+                int on_plan  = (plan & (1ULL << sq)) ? 1 : 0;
+                int supports = (pt >= 1 && (ai->att[sq] & plan)) ? 1 : 0;
+                int degree = on_plan * 2 + supports;   // 0..3
+                if (degree)
+                    score += sign * val * PLAN_PART * degree / 200;
                 else if (pt >= 1 && pt <= 4 && !(plan_all & (1ULL << sq)))
                     score -= sign * val * PLAN_IDLE / 100;
             }
@@ -775,7 +803,7 @@ static void gather_raw(const Board *bd, int *phase_out, int raw[STRAT_COUNT]) {
     raw[STRAT_OPPOSITION]          = eval_opposition(bd, phase);
     raw[STRAT_PAWN_PROMOTION]      = eval_pawn_promotion(bd, phase);
     raw[STRAT_COORDINATION]        = eval_coordination(bd, phase, &ai);
-    raw[STRAT_GAME_PLAN]           = eval_game_plan(bd, phase);
+    raw[STRAT_GAME_PLAN]           = eval_game_plan(bd, phase, &ai);
     raw[STRAT_SQUARE_VALUE]        = eval_square_value(bd, phase);
     raw[STRAT_BLOCKADE]            = eval_blockade(bd, phase);
     raw[STRAT_RESTRICTION]         = eval_restriction(bd, phase, &ai);

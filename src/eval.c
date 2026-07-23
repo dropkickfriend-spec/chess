@@ -137,6 +137,18 @@ int PLAN_ENGAGE = 50;
 // Learned through the registry; seed makes plan blockage double price.
 int LOGI_PLAN = 10;
 
+// Line-clearance: our own men that block a slider's ray are especially costly
+// when clearing that ray would bear on the enemy king zone (LINE_KING) or an
+// enemy rook/queen (LINE_HEAVY, per target) — a pawn "in the way" of an attack
+// on the king or a heavy piece is worth less where it stands. Learned.
+int LINE_KING  = 12;
+int LINE_HEAVY = 6;
+
+// Square-value context: a piece standing on a game-plan square has its
+// piece-square worth scaled by (10 + SQV_PLAN)/10 — the same square is worth
+// more when it serves the plan the search is executing. Learned.
+int SQV_PLAN = 10;
+
 // Certainty pricing: learned piece values are allowed to stay inflated —
 // they are the piece's worth at FULL plan execution. Material realises
 // CERT_FLOOR percent of it when the plan is contested, scaling linearly
@@ -178,6 +190,8 @@ const ParamBlock eval_params[] = {
     { "PLAN_PART", &PLAN_PART, 1 }, { "PLAN_IDLE", &PLAN_IDLE, 1 },
     { "PLAN_ENGAGE", &PLAN_ENGAGE, 1 }, { "CERT_FLOOR", &CERT_FLOOR, 1 },
     { "LOGI_PLAN", &LOGI_PLAN, 1 },
+    { "LINE_KING", &LINE_KING, 1 }, { "LINE_HEAVY", &LINE_HEAVY, 1 },
+    { "SQV_PLAN", &SQV_PLAN, 1 },
 };
 const int eval_params_n = sizeof(eval_params) / sizeof(eval_params[0]);
 
