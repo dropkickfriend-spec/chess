@@ -216,11 +216,10 @@
             <h2>Current Game — updates per move</h2>
             <div id="liveStatus" style="margin-bottom:8px;color:#b0b0b0">waiting for a live game…</div>
             <canvas id="liveEvalChart" width="1100" height="200" style="width:100%"></canvas>
-            <div class="controls"><button id="btnWatchLive">Watch on board</button></div>
         </div>
 
         <div class="section">
-            <h2>Game Viewer — per-move piece &amp; square values</h2>
+            <h2>Live Game (running in Termux) — per-move piece &amp; square values</h2>
             <select id="gameSel"></select>
             <div class="viewer">
                 <div>
@@ -437,9 +436,9 @@
             const matches = await fetchLiveMatches()
                          || await fetchJSON('data/matches.json') || [];
             const weightsFile = await fetchJSON('data/weights.json') || {};
-            const snapGames = await fetchJSON('data/games.json') || [];
-            const liveGames = await fetchLiveGames() || [];
-            const games = [...liveGames, ...snapGames];
+            // The game viewer shows ONLY the game currently streaming from
+            // Termux (driven by pollLive from the live_game row) — historical
+            // games are intentionally not loaded here.
             // Learned value tables: live from Supabase (any machine's retune),
             // committed JSON as offline fallback.
             const ltRow = await fetchJSON(
@@ -475,7 +474,6 @@
                     'Between games — recent weight snapshots (waiting for a live game)';
             }
             updateMatchTable(matches);
-            initViewer(games);
             document.getElementById('timestamp').textContent = new Date().toLocaleString();
         }
 
@@ -943,8 +941,9 @@
             GAMES = games;
             const sel = document.getElementById('gameSel');
             if (!games.length) {
-                sel.innerHTML = '<option>No games yet</option>';
+                sel.innerHTML = '<option>No live game — run one in Termux (--upload)</option>';
                 renderBoard(START_FEN);
+                curGame = 0; curPly = -1;
                 return;
             }
 
@@ -1159,7 +1158,13 @@
                 `${SUPABASE_URL}/rest/v1/live_game?id=eq.1&select=our_color,uci,evals,strat_series,ply,updated_at`,
                 { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
             const r = rows && rows[0];
-            if (!r || !r.uci) return;
+            if (!r || !r.uci) {
+                // No live game (row blanked): clear the viewer to its waiting state.
+                if (GAMES.length && GAMES[0] && GAMES[0].liveNow) { GAMES = []; initViewer([]); }
+                document.getElementById('liveStatus').textContent =
+                    'No live game — start one in Termux (python3 tools/match.py … --upload)';
+                return;
+            }
             LIVE_ROW = r;
             let evals = [];
             try { evals = JSON.parse(r.evals || '[]'); } catch {}
@@ -1180,28 +1185,32 @@
             } else {
                 CURRENT_SERIES = null;
             }
-            document.getElementById('liveStatus').textContent =
-                `ply ${r.ply} · chess-bb as ${r.our_color} · eval (White POV) per move · ` +
-                (age === null ? '' : age < 90 ? `updated ${age.toFixed(0)}s ago` : 'between games');
-            if (followLive && GAMES.length) {
+            const live = age !== null && age < 120;   // actively streaming now
+            document.getElementById('liveStatus').textContent = live
+                ? `▶ LIVE in Termux · chess-bb as ${r.our_color} · ply ${r.ply} · ` +
+                  `updated ${age.toFixed(0)}s ago · eval (White POV) per move`
+                : 'No live game — start one in Termux (python3 tools/match.py … --upload)';
+
+            // The viewer follows ONLY the game currently running in Termux.
+            if (live) {
                 const g = buildLiveGame({ our_color: r.our_color, result: '*',
                                           uci: r.uci, created_at: r.updated_at || '' });
                 g.liveNow = true;
-                if (GAMES[0] && GAMES[0].liveNow) GAMES[0] = g;
-                else { GAMES.unshift(g); rebuildGameSel(); }
-                if (curGame === 0 && g.moves.length) {
+                const prevLen = (GAMES[0] && GAMES[0].liveNow) ? GAMES[0].moves.length : -1;
+                GAMES = [g];
+                curGame = 0;
+                if (g.moves.length !== prevLen) {   // new game or a new move
+                    rebuildGameSel();
                     selectGame(0);
-                    setPly(g.moves.length - 1);
+                    setPly(g.moves.length - 1);      // stay on the live move
                 }
+            } else if (GAMES.length && GAMES[0] && GAMES[0].liveNow) {
+                GAMES = [];                          // game ended: clear the board
+                initViewer([]);
             }
         }
 
-        document.getElementById('btnWatchLive').onclick = () => {
-            if (!LIVE_ROW || !LIVE_ROW.uci) return;
-            followLive = true;
-            pollLive();
-        };
-
+        initViewer([]);          // viewer starts empty; pollLive fills it live
         setInterval(loadData, 60000);
         setInterval(pollLive, 3000);
         loadData();

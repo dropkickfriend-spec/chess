@@ -1,24 +1,6 @@
 {
- "skill": 3,
- "window": [
-  0.5,
-  0.5,
-  0.0,
-  0.0
- ],
- "games_total": 40,
- "promotions": [
-  {
-   "from_skill": 0,
-   "at_game": 12
-  },
-  {
-   "from_skill": 1,
-   "at_game": 24
-  },
-  {
-   "from_skill": 2,
-   "at_game": 36
-  }
- ]
+ "skill": 0,
+ "window": [],
+ "games_total": 0,
+ "promotions": []
 }
