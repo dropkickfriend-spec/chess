@@ -987,6 +987,9 @@
         // Live game keeps a STABLE key so it stays selected as it grows; each
         // finished game keys on its own identity so it survives list refreshes.
         function gameKey(g) { return g.liveNow ? 'LIVE' : `${g.date}|${g.result}|${g.white}|${g.black}`; }
+        // Auto-show the live game until the user deliberately picks another
+        // from the dropdown (stepping through moves does not count).
+        let userPicked = false;
 
         function initViewer(games) {
             // Refreshes must NEVER yank the user back to game 0 / move 1:
@@ -1009,7 +1012,7 @@
 
             if (!viewerBound) {
                 viewerBound = true;
-                sel.onchange = () => selectGame(+sel.value);
+                sel.onchange = () => { userPicked = true; selectGame(+sel.value); };
                 document.getElementById('btnStart').onclick = () => setPly(-1);
                 document.getElementById('btnPrev').onclick = () => setPly(curPly - 1);
                 document.getElementById('btnNext').onclick = () => setPly(curPly + 1);
@@ -1031,6 +1034,18 @@
                     if (e.key === 'ArrowLeft') setPly(curPly - 1);
                     if (e.key === 'ArrowRight') setPly(curPly + 1);
                 });
+            }
+
+            // Default to the live game (index 0) unless the user has chosen a
+            // specific game — so a running Termux game is what you see on load.
+            if (!userPicked && GAMES[0] && GAMES[0].liveNow) {
+                curGame = 0;
+                rebuildGameSel();
+                renderMoveList(GAMES[0]);
+                setPly(wasFollowingLive || curPly < 0
+                    ? GAMES[0].moves.length - 1
+                    : Math.min(prevPly, GAMES[0].moves.length - 1));
+                return;
             }
 
             let idx = prevKey ? GAMES.findIndex(g => gameKey(g) === prevKey) : -1;
