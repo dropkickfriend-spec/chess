@@ -339,7 +339,7 @@
         async function fetchLiveMatches() {
             const rows = await fetchJSON(
                 `${SUPABASE_URL}/rest/v1/chessbb_games` +
-                `?select=our_color,result,moves,created_at&uci=not.is.null&order=id.desc&limit=50`,
+                `?select=our_color,result,moves,created_at&uci=not.is.null&order=created_at.desc&limit=50`,
                 { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
             if (!rows || !rows.length) return null;
             return rows.reverse().map(r => ({
@@ -428,22 +428,33 @@
                 moves
             };
         }
-        async function fetchLiveGames() {
+        // Recent finished games from Supabase, newest first (id is a UUID, so
+        // order by created_at, not id). Each is replayable with its per-move
+        // overlays; strat_series rides along for the strategy chart.
+        async function fetchFinishedGames() {
             const rows = await fetchJSON(
                 `${SUPABASE_URL}/rest/v1/chessbb_games` +
-                `?select=our_color,result,uci,created_at&uci=not.is.null&order=id.desc&limit=60`,
+                `?select=our_color,result,uci,strat_series,created_at&uci=not.is.null` +
+                `&order=created_at.desc&limit=40`,
                 { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
-            if (!rows) return null;
-            return rows.map(buildLiveGame).filter(g => g.moves.length);
+            if (!rows) return [];
+            return rows.map(r => { const g = buildLiveGame(r, r); g.live = true; return g; })
+                       .filter(g => g.moves.length);
         }
+
+        // The viewer's game list = the live game (if streaming) on top of the
+        // recent finished games; both are kept separately and composed here.
+        let HIST = [], LIVEGAME = null;
+        function compose() { return (LIVEGAME ? [LIVEGAME] : []).concat(HIST); }
 
         async function loadData() {
             const matches = await fetchLiveMatches()
                          || await fetchJSON('data/matches.json') || [];
             const weightsFile = await fetchJSON('data/weights.json') || {};
-            // The game viewer shows ONLY the game currently streaming from
-            // Termux (driven by pollLive from the live_game row) — historical
-            // games are intentionally not loaded here.
+            // Recent finished games for the viewer; pollLive keeps the live one
+            // (if any) on top. initViewer preserves the user's current pick.
+            HIST = await fetchFinishedGames();
+            initViewer(compose());
             // Learned value tables: live from Supabase (any machine's retune),
             // committed JSON as offline fallback.
             const ltRow = await fetchJSON(
@@ -462,7 +473,7 @@
                 history = weightsFile.history || [];
             }
 
-            fetchJSON(`${SUPABASE_URL}/rest/v1/chessbb_matches?select=sf_skill&order=id.desc&limit=1`,
+            fetchJSON(`${SUPABASE_URL}/rest/v1/chessbb_matches?select=sf_skill&order=created_at.desc&limit=1`,
                 { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } })
                 .then(r => { if (r && r[0]) document.getElementById('rung').textContent =
                     r[0].sf_skill === null ? 'max' : r[0].sf_skill; });
@@ -935,13 +946,19 @@
         }
 
         let viewerBound = false;
-        function gameKey(g) { return `${g.liveNow ? 'NOW' : ''}${g.date}|${g.result}|${g.white}|${g.black}`; }
+        // Live game keeps a STABLE key so it stays selected as it grows; each
+        // finished game keys on its own identity so it survives list refreshes.
+        function gameKey(g) { return g.liveNow ? 'LIVE' : `${g.date}|${g.result}|${g.white}|${g.black}`; }
 
         function initViewer(games) {
             // Refreshes must NEVER yank the user back to game 0 / move 1:
             // remember what they were looking at and restore it.
-            const prevKey = GAMES[curGame] ? gameKey(GAMES[curGame]) : null;
+            const prevG = GAMES[curGame];
+            const prevKey = prevG ? gameKey(prevG) : null;
             const prevPly = curPly;
+            // Following = watching the live game and parked on its last move.
+            const wasFollowingLive = prevG && prevG.liveNow &&
+                                     curPly >= prevG.moves.length - 1;
 
             GAMES = games;
             const sel = document.getElementById('gameSel');
@@ -984,9 +1001,14 @@
             curGame = idx;
             rebuildGameSel();
             if (restoring) {
-                // same game: leave board and move list exactly where they were
-                selectGame(idx);
-                setPly(Math.min(prevPly, GAMES[idx].moves.length - 1));
+                // Same game still selected: rebuild its (possibly grown) move
+                // list but keep the user's spot — unless they were following
+                // the live edge, in which case advance to the newest move.
+                const g = GAMES[idx];
+                renderMoveList(g);
+                setPly(g.liveNow && wasFollowingLive
+                    ? g.moves.length - 1
+                    : Math.min(prevPly, g.moves.length - 1));
             } else if (prevKey === null) {
                 selectGame(0);        // first load only
             } else {
@@ -1159,7 +1181,7 @@
         function rebuildGameSel() {
             const sel = document.getElementById('gameSel');
             sel.innerHTML = GAMES.map((g, i) =>
-                `<option value="${i}">${g.liveNow ? '⚡ NOW ' : g.live ? '🔴 LIVE ' : ''}#${i + 1} · ${g.white} vs ${g.black} · ${g.result} · ${g.moves.length} plies · ${g.date}</option>`).join('');
+                `<option value="${i}">${g.liveNow ? '⚡ NOW · ' : ''}${g.white} vs ${g.black} · ${g.result} · ${g.moves.length} plies · ${g.date}</option>`).join('');
             sel.value = curGame;
         }
 
@@ -1169,8 +1191,9 @@
                 { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
             const r = rows && rows[0];
             if (!r || !r.uci) {
-                // No live game (row blanked): clear the viewer to its waiting state.
-                if (GAMES.length && GAMES[0] && GAMES[0].liveNow) { GAMES = []; initViewer([]); }
+                // No live game (row blanked): drop the live entry but keep the
+                // finished-game history in the viewer.
+                if (LIVEGAME) { LIVEGAME = null; initViewer(compose()); }
                 document.getElementById('liveStatus').textContent =
                     'No live game — start one in Termux (python3 tools/match.py … --upload)';
                 return;
@@ -1201,28 +1224,22 @@
                   `updated ${age.toFixed(0)}s ago · eval (White POV) per move`
                 : 'No live game — start one in Termux (python3 tools/match.py … --upload)';
 
-            // The viewer follows ONLY the game currently running in Termux, and
-            // it only auto-advances when you're already parked on the latest
-            // move — so Prev/Next hold while the game keeps streaming.
+            // The live game sits on top of the finished-game history. It
+            // updates in place; initViewer preserves your selection and only
+            // auto-advances the live game when you're parked on its last move.
             if (live) {
                 const g = buildLiveGame({ our_color: r.our_color, result: '*',
                                           uci: r.uci, created_at: r.updated_at || '' },
                                           r);
                 g.liveNow = true;
-                const wasLive = GAMES[0] && GAMES[0].liveNow;
-                const prevLen = wasLive ? GAMES[0].moves.length : 0;
-                // Following = new game, or the user is sitting on the last ply.
-                const following = !wasLive || curPly >= prevLen - 1;
-                GAMES = [g];
-                curGame = 0;
-                if (g.moves.length !== prevLen) {   // a new move (or new game)
-                    if (!wasLive) rebuildGameSel();
-                    renderMoveList(g);              // grow the list, keep the ply
-                    setPly(following ? g.moves.length - 1 : curPly);
-                }
-            } else if (GAMES.length && GAMES[0] && GAMES[0].liveNow) {
-                GAMES = [];                          // game ended: clear the board
-                initViewer([]);
+                const prevLen = LIVEGAME ? LIVEGAME.moves.length : -1;
+                LIVEGAME = g;
+                // Only recompose when the live game appears or gains a move, so
+                // the dropdown/move list don't rebuild on every idle poll.
+                if (g.moves.length !== prevLen) initViewer(compose());
+            } else if (LIVEGAME) {
+                LIVEGAME = null;                     // ended: pull it into history
+                fetchFinishedGames().then(h => { HIST = h; initViewer(compose()); });
             }
         }
 
