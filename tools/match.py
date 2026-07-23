@@ -107,18 +107,34 @@ def upload_match(sf_skill, sf_elo, movetime, wins, draws, losses, games):
     print(f"uploaded match {match_id} ({len(games)} games) to Supabase")
 
 
+def pv_plan(mover, pv):
+    """Split a principal variation's from/to squares by the side that plays
+    each move (the engine's own game plan), matching plan_squares[w]/[b] in
+    search.c. Returns {"w": [...], "b": [...]}; capped to the near future."""
+    w, b = [], []
+    side = mover                       # chess.WHITE / chess.BLACK
+    for mv in (pv or [])[:8]:
+        (w if side == chess.WHITE else b).extend((mv.from_square, mv.to_square))
+        side = not side
+    return {"w": w, "b": b}
+
+
 def play_game(white, black, movetime, max_plies=1000, live_cb=None):
     board = chess.Board()
     evals = []
+    plans = []                          # per-ply game-plan squares (engine PV)
     while not board.is_game_over(claim_draw=True) and board.ply() < max_plies:
         eng = white if board.turn == chess.WHITE else black
+        mover = board.turn
         result = eng.play(board, chess.engine.Limit(time=movetime),
-                          info=chess.engine.INFO_SCORE)
+                          info=chess.engine.INFO_SCORE | chess.engine.INFO_PV)
         board.push(result.move)
         sc = result.info.get("score") if result.info else None
         evals.append(sc.white().score(mate_score=10000) if sc else None)
+        pv = result.info.get("pv") if result.info else None
+        plans.append(pv_plan(mover, pv) if pv else None)
         if live_cb:
-            live_cb(board, evals)
+            live_cb(board, evals, plans)
     return board, evals
 
 
@@ -161,10 +177,12 @@ def make_live_cb(base_url, key, our_color, engine_path=None, env=None):
     last = [0.0]
     series = []
 
-    def cb(board, evals):
+    def cb(board, evals, plans=None):
         # Throttle to ~1/s. The per-move strategy breakdown spawns an engine
         # subprocess, so we only pay for it when we actually upload — keeps
         # games fast (especially on phones) while the live graph still moves.
+        # (evals and plans are full per-ply lists, so the game plan overlay
+        # and eval trace stay full-resolution regardless of the throttle.)
         now = _time.time()
         if now - last[0] < 1.0 and not board.is_game_over(claim_draw=True):
             return
@@ -180,6 +198,7 @@ def make_live_cb(base_url, key, our_color, engine_path=None, env=None):
                 "uci": " ".join(m.uci() for m in board.move_stack),
                 "evals": json.dumps(evals),
                 "strat_series": json.dumps(series),
+                "plans": json.dumps(plans or []),
                 "ply": board.ply(),
                 "updated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
             }], upsert=True)

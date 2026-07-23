@@ -389,9 +389,13 @@
             }
             return rows.join('/') + ' w - - 0 1';
         }
-        function buildLiveGame(row) {
+        function buildLiveGame(row, live) {
             const cells = fenBoard(START_FEN);
             const moves = [];
+            // Per-move game-plan squares (the engine's PV, {w:[],b:[]}) streamed
+            // from Termux alongside the moves; overlayPlan highlights them.
+            let plans = null;
+            if (live) { try { plans = JSON.parse(live.plans || 'null'); } catch {} }
             for (const uci of (row.uci || '').split(' ')) {
                 if (uci.length < 4) continue;
                 const a = applyUci(cells, uci);
@@ -407,6 +411,7 @@
                     pst_delta: [pvT.pstMg - pvF.pstMg, pvT.pstEg - pvF.pstEg],
                     fen: cellsToFen(cells)
                 };
+                if (plans && plans[moves.length]) rec.plan = plans[moves.length];
                 if (a.captured) {
                     rec.captured = a.captured.toUpperCase();
                     rec.cap_value = matMg(a.captured.toUpperCase());
@@ -993,7 +998,13 @@
 
         function selectGame(i) {
             curGame = i;
-            const g = GAMES[i];
+            renderMoveList(GAMES[i]);
+            setPly(-1);
+        }
+
+        // Rebuild the move list for a game WITHOUT touching the current ply, so
+        // a live update can grow the list while the user stays put on a move.
+        function renderMoveList(g) {
             const list = document.getElementById('moveList');
             list.innerHTML = '';
             for (let p = 0; p < g.moves.length; p += 2) {
@@ -1004,7 +1015,6 @@
             }
             list.querySelectorAll('.mv').forEach(el =>
                 el.onclick = () => setPly(+el.dataset.ply));
-            setPly(-1);
         }
 
         function fmt(v) {
@@ -1155,7 +1165,7 @@
 
         async function pollLive() {
             const rows = await fetchJSON(
-                `${SUPABASE_URL}/rest/v1/live_game?id=eq.1&select=our_color,uci,evals,strat_series,ply,updated_at`,
+                `${SUPABASE_URL}/rest/v1/live_game?id=eq.1&select=our_color,uci,evals,strat_series,plans,ply,updated_at`,
                 { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
             const r = rows && rows[0];
             if (!r || !r.uci) {
@@ -1191,18 +1201,24 @@
                   `updated ${age.toFixed(0)}s ago · eval (White POV) per move`
                 : 'No live game — start one in Termux (python3 tools/match.py … --upload)';
 
-            // The viewer follows ONLY the game currently running in Termux.
+            // The viewer follows ONLY the game currently running in Termux, and
+            // it only auto-advances when you're already parked on the latest
+            // move — so Prev/Next hold while the game keeps streaming.
             if (live) {
                 const g = buildLiveGame({ our_color: r.our_color, result: '*',
-                                          uci: r.uci, created_at: r.updated_at || '' });
+                                          uci: r.uci, created_at: r.updated_at || '' },
+                                          r);
                 g.liveNow = true;
-                const prevLen = (GAMES[0] && GAMES[0].liveNow) ? GAMES[0].moves.length : -1;
+                const wasLive = GAMES[0] && GAMES[0].liveNow;
+                const prevLen = wasLive ? GAMES[0].moves.length : 0;
+                // Following = new game, or the user is sitting on the last ply.
+                const following = !wasLive || curPly >= prevLen - 1;
                 GAMES = [g];
                 curGame = 0;
-                if (g.moves.length !== prevLen) {   // new game or a new move
-                    rebuildGameSel();
-                    selectGame(0);
-                    setPly(g.moves.length - 1);      // stay on the live move
+                if (g.moves.length !== prevLen) {   // a new move (or new game)
+                    if (!wasLive) rebuildGameSel();
+                    renderMoveList(g);              // grow the list, keep the ply
+                    setPly(following ? g.moves.length - 1 : curPly);
                 }
             } else if (GAMES.length && GAMES[0] && GAMES[0].liveNow) {
                 GAMES = [];                          // game ended: clear the board
