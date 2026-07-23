@@ -1,0 +1,28 @@
+# Solid mainline openings (UCI move sequences from the start position).
+# Regenerate the book with: ./chess mkbook < data/opening_lines.txt
+# --- 1.e4 e5 ---
+e2e4 e7e5 g1f3 b8c6 f1b5 a7a6 b5a4 g8f6 e1g1 f8e7 f1e1 b7b5 a4b3 d7d6
+e2e4 e7e5 g1f3 b8c6 f1c4 f8c5 c2c3 g8f6 d2d3 d7d6
+e2e4 e7e5 g1f3 b8c6 f1c4 g8f6 d2d3 f8c5
+e2e4 e7e5 g1f3 b8c6 b1c3 g8f6 f1b5 f8b4
+# --- Sicilian ---
+e2e4 c7c5 g1f3 d7d6 d2d4 c5d4 f3d4 g8f6 b1c3 a7a6 f1e2 e7e5
+e2e4 c7c5 g1f3 b8c6 d2d4 c5d4 f3d4 g8f6 b1c3 e7e5
+e2e4 c7c5 g1f3 e7e6 d2d4 c5d4 f3d4 b8c6 b1c3 d8c7
+# --- French / Caro-Kann ---
+e2e4 e7e6 d2d4 d7d5 b1c3 g8f6 c1g5 f8e7
+e2e4 e7e6 d2d4 d7d5 b1d2 g8f6 e4e5 f6d7
+e2e4 c7c6 d2d4 d7d5 b1c3 d5e4 c3e4 c8f5
+e2e4 c7c6 d2d4 d7d5 e4e5 c8f5 g1f3 e7e6
+# --- 1.d4 d5 ---
+d2d4 d7d5 c2c4 e7e6 b1c3 g8f6 c1g5 f8e7 e2e3 e8g8
+d2d4 d7d5 c2c4 c7c6 g1f3 g8f6 b1c3 d5c4
+d2d4 d7d5 c2c4 e7e6 b1c3 c7c6 g1f3 g8f6
+# --- 1.d4 Nf6 (Indian) ---
+d2d4 g8f6 c2c4 g7g6 b1c3 f8g7 e2e4 d7d6 g1f3 e8g8
+d2d4 g8f6 c2c4 e7e6 b1c3 f8b4 e2e3 e8g8
+d2d4 g8f6 c2c4 g7g6 b1c3 d7d5 g1f3 f8g7
+d2d4 g8f6 c2c4 e7e6 g1f3 d7d5 b1c3 f8e7
+# --- English / Reti ---
+c2c4 e7e5 b1c3 g8f6 g1f3 b8c6
+g1f3 d7d5 d2d4 g8f6 c2c4 e7e6

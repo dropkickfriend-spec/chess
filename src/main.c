@@ -114,6 +114,39 @@ int main(int argc, char **argv) {
         return 0;
     }
 
+    // Opening-book generator: each stdin line is a UCI move sequence from the
+    // start position (e.g. "e2e4 e7e5 g1f3 b8c6"). For every position along
+    // the line we emit a trusted route-book entry recommending the next move,
+    // keyed by the engine's own board_hash so search.c probes it exactly. The
+    // output is appended/merged into the route book (dedup with sort -u).
+    if (argc >= 2 && strcmp(argv[1], "mkbook") == 0) {
+        extern U64 board_hash(const Board *bd);
+        char line[2048];
+        while (fgets(line, sizeof(line), stdin)) {
+            line[strcspn(line, "\r\n")] = 0;
+            if (!line[0] || line[0] == '#') continue;
+            Board bd;
+            board_from_fen(&bd, START_FEN);
+            for (char *tok = strtok(line, " \t"); tok; tok = strtok(NULL, " \t")) {
+                MoveList ml;
+                generate_legal_moves(&bd, &ml);
+                int mv = 0;
+                for (int i = 0; i < ml.count; i++) {
+                    char buf[6];
+                    move_to_str(ml.moves[i], buf);
+                    if (strcmp(buf, tok) == 0) { mv = ml.moves[i]; break; }
+                }
+                if (!mv) break;   // typo / illegal in this line: stop it here
+                // depth 12, cert 100 => trusted for instant root play
+                printf("%016llx 12 20 100 %s\n",
+                       (unsigned long long)board_hash(&bd), tok);
+                Undo u;
+                make_move(&bd, mv, &u);
+            }
+        }
+        return 0;
+    }
+
     // Default: speak UCI on stdin/stdout (how GUIs and match runners drive us)
     uci_loop();
     return 0;
