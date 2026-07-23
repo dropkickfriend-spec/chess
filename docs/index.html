@@ -205,6 +205,9 @@
                 <thead><tr><th>SF skill</th><th>W</th><th>D</th><th>L</th><th>Score</th><th>Games</th></tr></thead>
                 <tbody></tbody>
             </table></div>
+            <div style="color:#00d4ff;font-size:0.9em;margin:14px 0 2px">Improvement over time — rolling score % per skill level</div>
+            <div class="legend" id="levelLegend"></div>
+            <canvas id="levelChart" width="1100" height="220" style="width:100%"></canvas>
         </div>
 
         <div class="section">
@@ -477,6 +480,53 @@
                     `<td class="pos">${t.w}</td><td>${t.d}</td><td class="neg">${t.l}</td>` +
                     `<td>${pct}%</td><td>${n}</td></tr>`;
             }).join('');
+            drawLevelChart(rows, keys);
+        }
+
+        // One line per skill level: rolling score % (win=1, draw=.5) over that
+        // level's games in chronological order — is it improving as it trains?
+        function drawLevelChart(rows, keys) {
+            const canvas = document.getElementById('levelChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const W = canvas.width, H = canvas.height, pad = 30;
+            ctx.clearRect(0, 0, W, H);
+            // chronological outcome sequence per level
+            const seq = {};
+            keys.forEach(k => seq[k] = []);
+            rows.slice().reverse().forEach(r => {          // oldest first
+                const k = r.sf_skill == null ? 'elo/max' : r.sf_skill;
+                const o = r.result === '1/2-1/2' ? 0.5
+                        : ((r.result === '1-0') === (r.our_color === 'white')) ? 1 : 0;
+                (seq[k] = seq[k] || []).push(o);
+            });
+            const colFor = k => `hsl(${(k === 'elo/max' ? 21 : +k) * 16},70%,60%)`;
+            const win = 8;                                  // rolling window
+            let maxLen = 0;
+            keys.forEach(k => { if (seq[k].length > maxLen) maxLen = seq[k].length; });
+            // gridlines at 0/50/100%
+            ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.setLineDash([4, 4]);
+            [0, 50, 100].forEach(p => { const y = H - pad - (p / 100) * (H - 2 * pad);
+                ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke(); });
+            ctx.setLineDash([]);
+            ctx.fillStyle = '#b0b0b0'; ctx.font = '11px sans-serif';
+            ctx.fillText('100%', 2, pad + 4); ctx.fillText('50%', 4, H / 2);
+            ctx.fillText('0%', 8, H - pad);
+            const x = i => pad + (maxLen < 2 ? 0 : i * (W - 2 * pad) / (maxLen - 1));
+            const y = v => H - pad - v * (H - 2 * pad);
+            keys.forEach(k => {
+                const s = seq[k]; if (!s || s.length < 2) return;
+                ctx.strokeStyle = colFor(k); ctx.lineWidth = 2; ctx.beginPath();
+                for (let i = 0; i < s.length; i++) {
+                    const a = Math.max(0, i - win + 1);
+                    const roll = s.slice(a, i + 1).reduce((p, c) => p + c, 0) / (i - a + 1);
+                    i === 0 ? ctx.moveTo(x(i), y(roll)) : ctx.lineTo(x(i), y(roll));
+                }
+                ctx.stroke();
+            });
+            document.getElementById('levelLegend').innerHTML = keys
+                .filter(k => (seq[k] || []).length >= 2)
+                .map(k => `<span><i style="background:${colFor(k)}"></i>skill ${k}</span>`).join('');
         }
 
         // The viewer's game list = the live game (if streaming) on top of the
