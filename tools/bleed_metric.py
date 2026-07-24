@@ -18,6 +18,7 @@ Usage:
 """
 import datetime
 import os
+import shutil
 import sys
 
 import chess
@@ -25,7 +26,9 @@ import chess.engine
 import chess.pgn
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SF = "/usr/games/stockfish"
+# Resolve Stockfish from PATH first (Termux installs it elsewhere), matching
+# match.py / training_loop.py; the hardcoded path is only a last-resort fallback.
+SF = os.environ.get("STOCKFISH") or shutil.which("stockfish") or "/usr/games/stockfish"
 CLAMP = 800
 
 
