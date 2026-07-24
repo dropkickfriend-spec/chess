@@ -33,7 +33,7 @@ import chess.engine
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENGINE = os.path.join(ROOT, "chess")
-BASELINE_WEIGHTS = os.path.join(ROOT, "data", "learned_values.txt")
+BASELINE_WEIGHTS = os.path.join(ROOT, "data", "learned_values.txt")  # --baseline overrides
 
 # Varied opening lines (UCI), a few plies each, so deterministic engines don't
 # just replay one game. Both sides get each opening as White and as Black.
@@ -194,6 +194,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("presets", nargs="*", help="preset names (default: all)")
     ap.add_argument("--depth", type=int, default=6)
+    ap.add_argument("--baseline", default=None,
+                    help="baseline weights file (default data/learned_values.txt)")
     ap.add_argument("--openings", type=int, default=0,
                     help="cap on number of openings (0 = all available)")
     ap.add_argument("--set", default=None,
@@ -203,6 +205,9 @@ def main():
 
     if not os.path.exists(ENGINE):
         sys.exit(f"engine not built: {ENGINE} (run make)")
+    if args.baseline:
+        global BASELINE_WEIGHTS
+        BASELINE_WEIGHTS = os.path.abspath(args.baseline)
     openings = load_openings(args.openings)
     print(f"opening set: {len(openings)} positions "
           f"-> {2*len(openings)} games per ablation")
