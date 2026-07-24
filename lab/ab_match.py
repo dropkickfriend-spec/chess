@@ -60,6 +60,27 @@ OPENINGS = [
     "c2c4 c7c5",                     # Symmetrical English
 ]
 
+OPENING_LINES_FILE = os.path.join(ROOT, "data", "opening_lines.txt")
+
+
+def load_openings(limit):
+    """Built-in openings plus data/opening_lines.txt truncated at several
+    depths (more distinct, still-balanced start positions => more games =>
+    tighter error bars). Deterministic: sorted and deduped."""
+    ops = set(OPENINGS)
+    if os.path.exists(OPENING_LINES_FILE):
+        with open(OPENING_LINES_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                moves = line.split()
+                for ply in (4, 6, 8):          # a short, medium, long cut
+                    if len(moves) >= ply:
+                        ops.add(" ".join(moves[:ply]))
+    ordered = sorted(ops)
+    return ordered[:limit] if limit else ordered
+
 # Preset ablations: name -> list of "block index" pairs to zero (all indices of
 # a block if index is None). Zeroing a block disables that mechanism.
 PRESETS = {
@@ -173,8 +194,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("presets", nargs="*", help="preset names (default: all)")
     ap.add_argument("--depth", type=int, default=6)
-    ap.add_argument("--openings", type=int, default=len(OPENINGS),
-                    help="how many of the opening set to use")
+    ap.add_argument("--openings", type=int, default=0,
+                    help="cap on number of openings (0 = all available)")
     ap.add_argument("--set", default=None,
                     help='custom ablation: comma-separated "block index value=0" '
                          'lines, e.g. "trap_w 0 0,PRESS 0 0"')
@@ -182,7 +203,9 @@ def main():
 
     if not os.path.exists(ENGINE):
         sys.exit(f"engine not built: {ENGINE} (run make)")
-    openings = OPENINGS[:args.openings]
+    openings = load_openings(args.openings)
+    print(f"opening set: {len(openings)} positions "
+          f"-> {2*len(openings)} games per ablation")
 
     if args.set:
         lines = [s.strip() for s in args.set.split(",")]
