@@ -25,8 +25,6 @@ extern U64 plan_squares[2];        // search.c: the current game plan
 extern int LOGI_PLAN;              // eval.c: plan-blockage price multiplier
 extern int LINE_KING, LINE_HEAVY;  // eval.c: line-clearance toward king / heavy
 extern int SQV_PLAN;               // eval.c: square-value plan amplifier
-extern int trap_w[4];              // eval.c: trap-risk weights N B R Q
-extern int TRAP_FLOOR;             // eval.c: safe-square floor for trap risk
 
 static const int phase_w[6] = { 0, 1, 1, 2, 4, 0 };
 
@@ -290,34 +288,7 @@ static int eval_piece_activity(const Board *bd, int phase, const AttackInfo *ai)
             eg += sign * BISHOP_PAIR_EG;
         }
     }
-
-    // Trap risk (reversibility axis): a piece with fewer than TRAP_FLOOR safe
-    // squares — not blocked by our own men, not covered by an enemy pawn — is
-    // near-trapped. The per-missing-square penalty is piece-typed: a knight is
-    // short-range and costs tempi to redeploy (worst), a bishop is colour-bound
-    // and hemmed along the pawn diagonals, rooks and the queen almost always
-    // keep an escape (least). Enemy pawns are the trap agents, matching how
-    // pawns wall the minors off along their own lines of movement.
-    for (int side = WHITE; side <= BLACK; side++) {
-        int sign = side == WHITE ? 1 : -1;
-        int base = side == WHITE ? WP : BP;
-        U64 own = bd->occ[side];
-        U64 epatt = 0, ep = bd->bb[side == WHITE ? BP : WP];
-        while (ep) { int s = LSB(ep); POP_BIT(ep, s); epatt |= pawn_attacks[!side][s]; }
-        for (int pt = 1; pt <= 4; pt++) {            // N B R Q
-            U64 bb = bd->bb[base + pt];
-            while (bb) {
-                int sq = LSB(bb); POP_BIT(bb, sq);
-                int safe = COUNT(ai->att[sq] & ~own & ~epatt);
-                if (safe < TRAP_FLOOR) {
-                    int pen = trap_w[pt - 1] * (TRAP_FLOOR - safe);
-                    mg -= sign * pen;
-                    eg -= sign * pen;
-                }
-            }
-        }
-    }
-
+    
     return (mg * phase + eg * (24 - phase)) / 24;
 }
 
