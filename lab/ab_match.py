@@ -84,15 +84,27 @@ def load_openings(limit):
 # Preset ablations: name -> list of "block index" pairs to zero (all indices of
 # a block if index is None). Zeroing a block disables that mechanism.
 PRESETS = {
-    "line_clear": [("LINE_KING", 0), ("LINE_HEAVY", 0)],
-    "sqv_plan":   [("SQV_PLAN", 0)],
-    "logi_plan":  [("LOGI_PLAN", 0)],
-    "plan_engage":[("PLAN_ENGAGE", 0)],
+    # High-frequency core terms (what's actually doing the lifting):
+    "pst":        [("pst_mg[0]", None), ("pst_mg[1]", None), ("pst_mg[2]", None),
+                   ("pst_mg[3]", None), ("pst_mg[4]", None), ("pst_mg[5]", None),
+                   ("pawn_eg", None), ("king_eg", None)],   # piece-square tables
+    "plan":       [("PLAN_PART", 0), ("PLAN_IDLE", 0), ("PLAN_ENGAGE", 0),
+                   ("LOGI_PLAN", 0), ("SQV_PLAN", 0),
+                   ("LINE_KING", 0), ("LINE_HEAVY", 0)],    # game-plan machinery
+    "pawn_struct":[("ISOLATED_MG", 0), ("ISOLATED_EG", 0), ("DOUBLED_MG", 0),
+                   ("DOUBLED_EG", 0), ("BISHOP_PAIR_MG", 0), ("BISHOP_PAIR_EG", 0),
+                   ("ROOK_OPEN", 0), ("ROOK_SEMIOPEN", 0), ("SHIELD_BONUS", 0)],
     "coord":      [("coord_w", None)],
     "restriction":[("action_w", 1)],
     "blockade":   [("action_w", 0)],
+    # plan sub-parts, for drilling in once the whole-plan number is known:
+    "plan_engage":[("PLAN_ENGAGE", 0)],
+    "sqv_plan":   [("SQV_PLAN", 0)],
 }
-BLOCK_COUNTS = {"coord_w": 5}   # blocks with >1 index that we may zero wholesale
+BLOCK_COUNTS = {"coord_w": 5,
+                "pst_mg[0]": 64, "pst_mg[1]": 64, "pst_mg[2]": 64,
+                "pst_mg[3]": 64, "pst_mg[4]": 64, "pst_mg[5]": 64,
+                "pawn_eg": 64, "king_eg": 64}
 
 
 def override_lines(spec):

@@ -180,7 +180,8 @@ U64 plan_squares[2] = { 0, 0 };
 int plan_certainty = 0;
 int search_last_score = 0;   // root score of the last search_best_move call
 int search_quiet = 0;        // suppress "info depth" output (offline book build)
-int book_anchor_on = 1;      // in-search book anchoring (CHESS_ANCHOR=0 disables)
+int book_anchor_on = 0;      // in-search book anchoring; measured neutral, off by
+                             // default (CHESS_ANCHOR=1 opts in for experiments)
 
 void search_set_history(const U64 *hashes, int n) {
     if (n > 1024) { hashes += n - 1024; n = 1024; }  // keep the recent tail
