@@ -159,12 +159,6 @@ int SQV_PLAN = 10;
 int trap_w[4]   = { 10, 7, 2, 3 };   // N B R Q, cp per missing safe square
 int TRAP_FLOOR  = 2;                  // penalise below this many safe squares
 
-// Enemy-relative commitment (the initiative race): a committed (near-trapped)
-// piece costs more when the enemy can actually reach it. The trap penalty is
-// scaled by (10 + PRESS*net)/10, where net = enemy attackers - our defenders
-// on the piece's square. PRESS is in tenths (5 = +0.5x per net attacker).
-int PRESS = 5;
-
 // Certainty pricing: learned piece values are allowed to stay inflated —
 // they are the piece's worth at FULL plan execution. Material realises
 // CERT_FLOOR percent of it when the plan is contested, scaling linearly
@@ -209,7 +203,6 @@ const ParamBlock eval_params[] = {
     { "LINE_KING", &LINE_KING, 1 }, { "LINE_HEAVY", &LINE_HEAVY, 1 },
     { "SQV_PLAN", &SQV_PLAN, 1 },
     { "trap_w", trap_w, 4 },
-    { "PRESS", &PRESS, 1 },
 };
 const int eval_params_n = sizeof(eval_params) / sizeof(eval_params[0]);
 

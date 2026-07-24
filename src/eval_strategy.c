@@ -27,7 +27,6 @@ extern int LINE_KING, LINE_HEAVY;  // eval.c: line-clearance toward king / heavy
 extern int SQV_PLAN;               // eval.c: square-value plan amplifier
 extern int trap_w[4];              // eval.c: trap-risk weights N B R Q
 extern int TRAP_FLOOR;             // eval.c: safe-square floor for trap risk
-extern int PRESS;                  // eval.c: enemy-pressure multiplier on commitment
 
 static const int phase_w[6] = { 0, 1, 1, 2, 4, 0 };
 
@@ -83,16 +82,6 @@ static void compute_attacks(const Board *bd, AttackInfo *ai) {
         bb = bd->bb[base + 5]; if (bb)    { int s = LSB(bb);                 a = king_attacks[s];            ai->att[s] = a; u |= a; }
         ai->side_att[side] = u;
     }
-}
-
-// How many of the occupied squares in `pieces` attack `sq` (pawns included,
-// since ai->att covers them). Used to weigh commitment by who can reach it.
-static int attackers_of(const AttackInfo *ai, U64 pieces, int sq) {
-    U64 bit = 1ULL << sq;
-    int n = 0;
-    while (pieces) { int s = LSB(pieces); POP_BIT(pieces, s);
-        if (ai->att[s] & bit) n++; }
-    return n;
 }
 
 extern int action_w[3];
@@ -322,14 +311,6 @@ static int eval_piece_activity(const Board *bd, int phase, const AttackInfo *ai)
                 int safe = COUNT(ai->att[sq] & ~own & ~epatt);
                 if (safe < TRAP_FLOOR) {
                     int pen = trap_w[pt - 1] * (TRAP_FLOOR - safe);
-                    // Enemy-relative commitment (the initiative race): a
-                    // committed piece the enemy can actually reach costs more;
-                    // an unattacked one keeps the baseline. net = enemy
-                    // attackers minus our defenders on the square.
-                    int atk = attackers_of(ai, bd->occ[!side], sq);
-                    int def = attackers_of(ai, own & ~(1ULL << sq), sq);
-                    int net = atk - def;
-                    if (net > 0) pen = pen * (10 + PRESS * net) / 10;
                     mg -= sign * pen;
                     eg -= sign * pen;
                 }
