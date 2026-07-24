@@ -33,7 +33,6 @@ typedef enum {
     STRAT_SQUARE_VALUE,   // piece-square tables, split out of MATERIAL
     STRAT_BLOCKADE,       // occupy the stop-square in front of an enemy passer
     STRAT_RESTRICTION,    // cover the squares the enemy wants (prophylaxis)
-    STRAT_TRANSIT,        // a square's value as a route to a better square
 
     STRAT_COUNT  // Total number of strategies
 } StrategyType;

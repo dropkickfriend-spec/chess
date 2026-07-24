@@ -119,7 +119,7 @@ int coord_w[5] = { 4, 4, 4, 4, 4 };
 // Square-action weights (cp per instance), learned via the registry:
 //   0 BLOCKADE   — occupying the stop-square in front of an enemy passer
 //   1 RESTRICT   — covering squares an enemy piece wants (prophylaxis)
-//   2 TRANSIT    — a piece's access to a strong square one move away
+//   2 (unused)   — was TRANSIT; kept so stored weight files stay valid
 int action_w[3] = { 6, 2, 3 };
 
 // Game-plan pricing (percent of a piece's material value): participants in

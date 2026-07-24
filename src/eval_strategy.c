@@ -53,7 +53,7 @@ static int eval_material(const Board *bd, int *phase_out) {
     return (mg * phase + eg * (24 - phase)) / 24;
 }
 
-// Union of all of a side's piece attacks (used by RESTRICTION/TRANSIT).
+// Union of all of a side's piece attacks (used by RESTRICTION).
 // Per-position attack cache. The same piece's attack set (under the full
 // occupancy) was previously recomputed independently in PIECE_ACTIVITY,
 // ATTACK_POTENTIAL, COORDINATION, RESTRICTION, TRANSIT and side_attacks —
@@ -134,34 +134,6 @@ static int eval_restriction(const Board *bd, int phase, const AttackInfo *ai) {
             }
         }
         score += sign * action_w[1] * restricted;
-    }
-    return score;
-}
-
-// Strategy: TRANSIT — a square's worth as a springboard: our minor pieces
-// that can hop to a strong central square next move (safe from enemy pawns)
-// are well-routed. Values the square as a route, not just a destination.
-static int eval_transit(const Board *bd, int phase, const AttackInfo *ai) {
-    (void)phase;
-    const U64 CENTER = (1ULL<<27)|(1ULL<<28)|(1ULL<<35)|(1ULL<<36)   // d4 e4 d5 e5
-                     | (1ULL<<26)|(1ULL<<29)|(1ULL<<34)|(1ULL<<37);  // c4 f4 c5 f5
-    int score = 0;
-    for (int side = WHITE; side <= BLACK; side++) {
-        int sign = side == WHITE ? 1 : -1;
-        int base = side == WHITE ? WP : BP;
-        U64 own = bd->occ[side];
-        // squares the enemy pawns cover (unsafe to route into)
-        U64 epawn_att = 0, ep = bd->bb[side == WHITE ? BP : WP];
-        while (ep) { int s = LSB(ep); POP_BIT(ep, s); epawn_att |= pawn_attacks[!side][s]; }
-        U64 good = CENTER & ~epawn_att;
-        int transit = 0;
-        U64 bb = bd->bb[base + 1];   // knights
-        while (bb) { int s = LSB(bb); POP_BIT(bb, s);
-            transit += COUNT(ai->att[s] & ~own & good); }
-        bb = bd->bb[base + 2];       // bishops
-        while (bb) { int s = LSB(bb); POP_BIT(bb, s);
-            transit += COUNT(ai->att[s] & ~own & good); }
-        score += sign * action_w[2] * transit;
     }
     return score;
 }
@@ -652,7 +624,7 @@ const char *strategy_names[STRAT_COUNT] = {
     "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE",
     "DEFENDER_LOGISTICS", "KING_ACTIVITY", "PAWN_PROMOTION",
     "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN", "SQUARE_VALUE",
-    "BLOCKADE", "RESTRICTION", "TRANSIT"
+    "BLOCKADE", "RESTRICTION"
 };
 
 extern int PLAN_PART, PLAN_IDLE, PLAN_ENGAGE, CERT_FLOOR, LOGI_PLAN;
@@ -807,7 +779,6 @@ static void gather_raw(const Board *bd, int *phase_out, int raw[STRAT_COUNT]) {
     raw[STRAT_SQUARE_VALUE]        = eval_square_value(bd, phase);
     raw[STRAT_BLOCKADE]            = eval_blockade(bd, phase);
     raw[STRAT_RESTRICTION]         = eval_restriction(bd, phase, &ai);
-    raw[STRAT_TRANSIT]             = eval_transit(bd, phase, &ai);
 
     // A queen is worth less when someone is getting mated — yours if the
     // attack is on you, theirs if you can throw it at their king. Material's
@@ -846,7 +817,6 @@ static float weight_mean(const Board *bd, const StrategyWeights *w, int phase,
     act[STRAT_SQUARE_VALUE]        = 1.0f;
     act[STRAT_BLOCKADE]            = 1.0f;
     act[STRAT_RESTRICTION]         = 1.0f;
-    act[STRAT_TRANSIT]             = 1.0f;
     act[STRAT_KING_SAFETY_OPENING] = po;
     act[STRAT_ATTACK_POTENTIAL]    = po;
     act[STRAT_DEVELOPMENT]         = po;
