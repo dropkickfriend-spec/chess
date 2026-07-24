@@ -84,14 +84,15 @@ def load_openings(limit):
 # Preset ablations: name -> list of "block index" pairs to zero (all indices of
 # a block if index is None). Zeroing a block disables that mechanism.
 PRESETS = {
-    "trap_risk":  [("trap_w", None), ("PRESS", 0)],   # whole commitment/trap axis
-    "press":      [("PRESS", 0)],                      # enemy-relative weighting only
     "line_clear": [("LINE_KING", 0), ("LINE_HEAVY", 0)],
     "sqv_plan":   [("SQV_PLAN", 0)],
     "logi_plan":  [("LOGI_PLAN", 0)],
     "plan_engage":[("PLAN_ENGAGE", 0)],
+    "coord":      [("coord_w", None)],
+    "restriction":[("action_w", 1)],
+    "blockade":   [("action_w", 0)],
 }
-BLOCK_COUNTS = {"trap_w": 4}   # blocks with >1 index that we may zero wholesale
+BLOCK_COUNTS = {"coord_w": 5}   # blocks with >1 index that we may zero wholesale
 
 
 def override_lines(spec):
