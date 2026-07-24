@@ -70,6 +70,8 @@ int main(int argc, char **argv) {
     // default; CHESS_ANCHOR=1 opts in (e.g. to retest with a much deeper book).
     { extern int book_anchor_on; const char *a = getenv("CHESS_ANCHOR");
       if (a && a[0] == '1') book_anchor_on = 1; }
+    // Toggle to measure DEFENDER_LOGISTICS (the eval's most expensive term).
+    { extern int eval_logistics_on; if (getenv("CHESS_NOLOGI")) eval_logistics_on = 0; }
 
     if (argc >= 2 && strcmp(argv[1], "perft") == 0) {
         int depth = argc >= 3 ? atoi(argv[2]) : 5;

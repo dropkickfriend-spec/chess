@@ -371,7 +371,10 @@ static int eval_attack_potential(const Board *bd, int phase, const AttackInfo *a
 // pieces executing it scores highest, and cramping them hurts most. Pawn
 // blockage stays full price (slow walls), piece blockage half (a friend can
 // vacate next move). LOGI_PLAN is a learned registry knob.
+int eval_logistics_on = 1;   // CHESS_NOLOGI=1 disables DEFENDER_LOGISTICS (~8% nps)
+
 static int eval_pawn_logistics(const Board *bd, int phase, const AttackInfo *ai) {
+    if (!eval_logistics_on) return 0;   // measured toggle: is it worth its cost?
     int mg = 0, eg = 0;
     U64 occ = bd->occ[BOTH];
 
