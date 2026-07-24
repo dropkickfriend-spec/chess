@@ -85,6 +85,7 @@ static void tt_store(U64 key, int depth, int score, int flag, int move, int ply)
 #define BOOK_SIZE   (1 << 16)
 #define BOOK_PROBE  8
 #define BOOK_TRUST_DEPTH 8
+#define BOOK_ANCHOR_CERT 50   // min certainty to inherit a book verdict mid-search
 
 typedef struct {
     U64 key;
@@ -177,6 +178,9 @@ U64 plan_squares[2] = { 0, 0 };
 // churns every iteration is contested (0). Inflated learned piece values
 // are realised in proportion to this.
 int plan_certainty = 0;
+int search_last_score = 0;   // root score of the last search_best_move call
+int search_quiet = 0;        // suppress "info depth" output (offline book build)
+int book_anchor_on = 1;      // in-search book anchoring (CHESS_ANCHOR=0 disables)
 
 void search_set_history(const U64 *hashes, int n) {
     if (n > 1024) { hashes += n - 1024; n = 1024; }  // keep the recent tail
@@ -378,6 +382,22 @@ static int negamax(Board *bd, int depth, int alpha, int beta, int ply, int can_n
     int tt_move;
     int tt_score = tt_probe(key, depth, alpha, beta, ply, &tt_move);
     if (tt_score != TT_MISS && ply > 0 && !is_pv) return tt_score;
+
+    // Borrowed horizon: this exact position may already carry an offline
+    // opening verdict deeper than we can compute here. If the route book knows
+    // it at least as deep, inherit that score — the search's horizon jumps
+    // forward along theory lines, and transpositions hit for free (same Zobrist
+    // key). The stored score is an EXACT deep verdict (like a tablebase hit),
+    // so returning it is sound even at a PV node; we only skip the root (ply 0,
+    // where the root probe already runs) and mate-range scores (whose distance
+    // is ply-relative and not stored that way).
+    if (book_enabled && book_anchor_on && ply > 0) {
+        BookEntry *be = book_slot(key, 0);
+        if (be && be->depth >= depth && be->certainty >= BOOK_ANCHOR_CERT
+            && be->score <  MATE_SCORE - MAX_PLY
+            && be->score > -MATE_SCORE + MAX_PLY)
+            return be->score;
+    }
 
     // Null-move pruning: hand the opponent a free move; if the reduced
     // search still fails high, a real move surely would too. Skipped when
@@ -583,22 +603,24 @@ int search_best_move(Board *bd, int movetime_ms, int max_depth) {
         prev_pv_len = pv_len[0] < 8 ? pv_len[0] : 8;
         for (int i = 0; i < prev_pv_len; i++) prev_pv[i] = pv_tab[0][i];
 
-        long long ms = now_ms() - start;
-        printf("info depth %d score ", depth);
-        if (score > MATE_SCORE - MAX_PLY)
-            printf("mate %d", (MATE_SCORE - score + 1) / 2);
-        else if (score < -MATE_SCORE + MAX_PLY)
-            printf("mate %d", -(MATE_SCORE + score + 1) / 2);
-        else
-            printf("cp %d", score);
-        printf(" nodes %lld time %lld pv", nodes, ms);
-        for (int i = 0; i < pv_len[0]; i++) {
-            char buf[6];
-            move_to_str(pv_tab[0][i], buf);
-            printf(" %s", buf);
+        if (!search_quiet) {
+            long long ms = now_ms() - start;
+            printf("info depth %d score ", depth);
+            if (score > MATE_SCORE - MAX_PLY)
+                printf("mate %d", (MATE_SCORE - score + 1) / 2);
+            else if (score < -MATE_SCORE + MAX_PLY)
+                printf("mate %d", -(MATE_SCORE + score + 1) / 2);
+            else
+                printf("cp %d", score);
+            printf(" nodes %lld time %lld pv", nodes, ms);
+            for (int i = 0; i < pv_len[0]; i++) {
+                char buf[6];
+                move_to_str(pv_tab[0][i], buf);
+                printf(" %s", buf);
+            }
+            printf("\n");
+            fflush(stdout);
         }
-        printf("\n");
-        fflush(stdout);
 
         if (score > MATE_SCORE - MAX_PLY) break;          // mate found; stop
         if (now_ms() - start > movetime_ms / 2) break;    // next depth won't finish
@@ -616,5 +638,6 @@ int search_best_move(Board *bd, int movetime_ms, int max_depth) {
         move_to_str(best, buf);
         book_remember(root_key, done_depth, prev_score, plan_certainty, buf, 1);
     }
+    search_last_score = prev_score;   // exposed for offline book building (mkbook)
     return best;
 }

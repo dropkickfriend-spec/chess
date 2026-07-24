@@ -66,6 +66,10 @@ int main(int argc, char **argv) {
         int n = book_load(bf, force);
         if (n) fprintf(stderr, "loaded %d book routes from %s\n", n, bf);
     }
+    // In-search book anchoring (borrowed horizon) on by default; CHESS_ANCHOR=0
+    // disables it so its strength contribution can be measured in isolation.
+    { extern int book_anchor_on; const char *a = getenv("CHESS_ANCHOR");
+      if (a && a[0] == '0') book_anchor_on = 0; }
 
     if (argc >= 2 && strcmp(argv[1], "perft") == 0) {
         int depth = argc >= 3 ? atoi(argv[2]) : 5;
@@ -121,6 +125,15 @@ int main(int argc, char **argv) {
     // output is appended/merged into the route book (dedup with sort -u).
     if (argc >= 2 && strcmp(argv[1], "mkbook") == 0) {
         extern U64 board_hash(const Board *bd);
+        extern int search_last_score, search_quiet;
+        search_quiet = 1;   // book lines only on stdout, no search chatter
+        // Each stdin line is a UCI opening sequence. For every position along
+        // it we SEARCH to a fixed depth and record the real verdict {score,
+        // depth} keyed by Zobrist hash, recommending the theory move. Those
+        // real scores are what the in-search book anchor inherits as a
+        // borrowed horizon. depth = argv[2] (default 10). Run against a fresh
+        // route book (no route_book.txt present) so the search is pure.
+        int mk_depth = argc >= 3 ? atoi(argv[2]) : 10;
         char line[2048];
         while (fgets(line, sizeof(line), stdin)) {
             line[strcspn(line, "\r\n")] = 0;
@@ -137,9 +150,12 @@ int main(int argc, char **argv) {
                     if (strcmp(buf, tok) == 0) { mv = ml.moves[i]; break; }
                 }
                 if (!mv) break;   // typo / illegal in this line: stop it here
-                // depth 12, cert 100 => trusted for instant root play
-                printf("%016llx 12 20 100 %s\n",
-                       (unsigned long long)board_hash(&bd), tok);
+                U64 h = board_hash(&bd);
+                search_set_history(&h, 0);                 // isolated verdict
+                search_best_move(&bd, 3600000, mk_depth);  // real deep search
+                printf("%016llx %d %d 100 %s\n", (unsigned long long)h,
+                       mk_depth, search_last_score, tok);
+                fflush(stdout);
                 Undo u;
                 make_move(&bd, mv, &u);
             }
