@@ -324,10 +324,24 @@
         // in index order; a new snapshot starts whenever the index wraps
         // (handles historic 11-strategy rows and current 12-strategy rows).
         async function fetchWeightHistory() {
-            const rows = await fetchJSON(
-                `${SUPABASE_URL}/rest/v1/strategy_weights?select=strategy_idx,weight&order=id.asc&limit=12000`,
-                { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
-            if (!rows || rows.length < 11) return null;
+            // PostgREST caps every response at 1000 rows regardless of the
+            // limit we ask for, so a single request only ever returned ~59
+            // full snapshots (1000 / 17 strategies). Page through with offset
+            // until a short page comes back, so the whole history is drawn.
+            const PAGE = 1000;
+            let rows = [], offset = 0;
+            for (;;) {
+                const page = await fetchJSON(
+                    `${SUPABASE_URL}/rest/v1/strategy_weights?select=strategy_idx,weight` +
+                    `&order=id.asc&limit=${PAGE}&offset=${offset}`,
+                    { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
+                if (!page || !page.length) break;
+                rows = rows.concat(page);
+                if (page.length < PAGE) break;
+                offset += PAGE;
+                if (offset > 200000) break;   // safety stop
+            }
+            if (rows.length < 11) return null;
             const snaps = [];
             let snap = null, lastIdx = 99;
             for (const row of rows) {
