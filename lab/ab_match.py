@@ -97,9 +97,12 @@ PRESETS = {
     "coord":      [("coord_w", None)],
     "restriction":[("action_w", 1)],
     "blockade":   [("action_w", 0)],
-    # plan sub-parts, for drilling in once the whole-plan number is known:
-    "plan_engage":[("PLAN_ENGAGE", 0)],
-    "sqv_plan":   [("SQV_PLAN", 0)],
+    # plan sub-parts, for drilling into the plan machinery's -137 Elo:
+    "game_plan":  [("PLAN_PART", 0), ("PLAN_IDLE", 0)],   # GAME_PLAN piece pricing
+    "plan_engage":[("PLAN_ENGAGE", 0)],                   # weight-budget plan gain
+    "sqv_plan":   [("SQV_PLAN", 0)],                      # square-value amplifier
+    "logi_plan":  [("LOGI_PLAN", 0)],                     # plan-relative logistics
+    "line_clear": [("LINE_KING", 0), ("LINE_HEAVY", 0)],  # line-clearance
 }
 BLOCK_COUNTS = {"coord_w": 5,
                 "pst_mg[0]": 64, "pst_mg[1]": 64, "pst_mg[2]": 64,
