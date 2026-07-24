@@ -158,7 +158,7 @@ static int eval_square_value(const Board *bd, int phase) {
                                                            : pst_mg[pt][idx];
                 // Context: the same square is worth more when the piece on it
                 // serves the plan the search is executing (SQV_PLAN percent).
-                if (plan && (plan & (1ULL << sq))) {
+                if (SQV_PLAN && plan && (plan & (1ULL << sq))) {
                     pmg = pmg * (10 + SQV_PLAN) / 10;
                     peg = peg * (10 + SQV_PLAN) / 10;
                 }
@@ -640,6 +640,7 @@ extern int plan_certainty;
 // averages — the plan is recomputed from scratch each search per position.
 static int eval_game_plan(const Board *bd, int phase, const AttackInfo *ai) {
     (void)phase;
+    if (!PLAN_PART && !PLAN_IDLE) return 0;   // machinery disabled: skip the walk
     U64 plan_all = plan_squares[WHITE] | plan_squares[BLACK];
     if (!plan_all) return 0;   // no lookahead yet (depth 1, tune, tooling)
 
@@ -830,7 +831,7 @@ static float weight_mean(const Board *bd, const StrategyWeights *w, int phase,
     // of the strategies executing it, and the shared budget automatically
     // dilutes the bystanders. The gain (PLAN_ENGAGE percent) is a single
     // learned knob, not a per-strategy hand-set.
-    U64 plan_all = plan_squares[WHITE] | plan_squares[BLACK];
+    U64 plan_all = PLAN_ENGAGE ? (plan_squares[WHITE] | plan_squares[BLACK]) : 0;
     if (plan_all) {
         // Certainty gates the plan's authority over the whole budget: a
         // churning plan barely reweights the other strategies; a plan the
