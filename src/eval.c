@@ -149,6 +149,16 @@ int LINE_HEAVY = 6;
 // more when it serves the plan the search is executing. Learned.
 int SQV_PLAN = 10;
 
+// Trap risk (reversibility axis): a piece with fewer than TRAP_FLOOR *safe*
+// squares — squares not blocked by our own men and not covered by an enemy
+// pawn — is close to being trapped. The penalty per missing safe square is
+// trap_w, ordered by how expensive the piece is to extract: a knight is
+// short-range and costs several tempi to redeploy (worst), a bishop is
+// colour-bound and hemmed along the pawn diagonals (next), rooks and the
+// queen are long-range and almost always keep an escape (least). Learned.
+int trap_w[4]   = { 10, 7, 2, 3 };   // N B R Q, cp per missing safe square
+int TRAP_FLOOR  = 2;                  // penalise below this many safe squares
+
 // Certainty pricing: learned piece values are allowed to stay inflated —
 // they are the piece's worth at FULL plan execution. Material realises
 // CERT_FLOOR percent of it when the plan is contested, scaling linearly
@@ -192,6 +202,7 @@ const ParamBlock eval_params[] = {
     { "LOGI_PLAN", &LOGI_PLAN, 1 },
     { "LINE_KING", &LINE_KING, 1 }, { "LINE_HEAVY", &LINE_HEAVY, 1 },
     { "SQV_PLAN", &SQV_PLAN, 1 },
+    { "trap_w", trap_w, 4 },
 };
 const int eval_params_n = sizeof(eval_params) / sizeof(eval_params[0]);
 
