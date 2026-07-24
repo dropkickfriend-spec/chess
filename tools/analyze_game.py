@@ -10,6 +10,7 @@ Usage:
             draws/wins teach a lot)
   Adjusts weights.txt and uploads to Supabase if configured.
 """
+import math
 import sys
 import chess
 import chess.pgn
@@ -112,21 +113,30 @@ def save_weights(path, weights):
             w = weights.get(strat, 1.0)
             f.write(f"weight {idx} {w}\n")
 
-def adjust_weights(weights, strategy_log, outcome, expected=0.5):
-    """Surprise-driven, zero-sum weight adjustment.
+def adjust_weights(weights, strategy_log, outcome, expected=0.5,
+                   LR=0.3, MEANREV=0.15):
+    """Surprise-driven weight adjustment in log space.
 
-    The old rule multiplied by 0.98 per MOVE of a lost game, so against an
-    opponent that always wins every weight compounded toward zero and the
-    eval degenerated to noise (observed: 20 straight losses drove MATERIAL
-    to 0.0000 and games got shorter as training progressed).
+    The previous rule multiplied each weight by (1 + LR*surprise*share) and
+    renormalised by the ARITHMETIC mean. "share" = fraction of moves a
+    strategy was active, so the six all-game strategies (share~1) grew fastest
+    on every win, inflated the mean, and the renormalise step pushed every
+    phase-specific strategy (share<0.5) DOWN — to the floor, permanently. A
+    simulation confirmed it: from a uniform start, 20 wins drove PIECE_ACTIVITY,
+    KING_SAFETY, DEVELOPMENT etc. to the 0.05/0.25 floor and left them stuck.
+    It rewarded *duration of activity*, not contribution to the result.
 
-    New rule:
-    - surprise = outcome - expected: a loss to max-skill Stockfish is
-      expected and teaches almost nothing; a draw or win is a shock.
-    - one bounded nudge per game, scaled by each strategy's share of moves.
-    - weights renormalise to mean 1.0 afterwards: learning redistributes
-      emphasis between strategies (only ratios matter to the engine's
-      relative reweighting), so collapse is impossible.
+    New rule (validated by that same simulation, tools test_weights3.py):
+    - work in log space so updates are symmetric and can't drive a weight <0;
+    - MEANREV pulls every weight back toward the uniform prior (1.0) each game,
+      so a crushed strategy climbs back on its own and nothing runs away;
+    - centred credit surprise*(share - mean_share): above-average participation
+      earns weight on a win (below-average loses), reversed on a loss — zero
+      sum, so it can't pump every active strategy at once;
+    - GEOMETRIC-mean normalisation (subtract the mean log), which is floor
+      neutral, instead of arithmetic-mean normalisation which floored the
+      small weights. Real differentiation comes from the --retune fit; this
+      nudge just moves the brain sensibly between retunes without collapsing.
     """
     surprise = outcome - expected
     total_moves = max(len(strategy_log), 1)
@@ -135,20 +145,22 @@ def adjust_weights(weights, strategy_log, outcome, expected=0.5):
     for entry in strategy_log:
         for strat in entry["active_strategies"]:
             counts[strat] = counts.get(strat, 0) + 1
+    shares = {s: counts.get(s, 0) / total_moves for s in weights}
+    mean_share = sum(shares.values()) / max(len(shares), 1)
 
-    LR = 0.5
-    for strat, c in counts.items():
-        if strat in weights:
-            share = c / total_moves
-            weights[strat] *= 1.0 + LR * surprise * share
+    for strat in weights:
+        lw = math.log(max(weights[strat], 1e-6))
+        lw = (1.0 - MEANREV) * lw + LR * surprise * (shares[strat] - mean_share)
+        weights[strat] = math.exp(lw)
 
-    mean = sum(weights.values()) / max(len(weights), 1)
-    if mean > 1e-6:
-        for strat in weights:
-            weights[strat] /= mean
+    # Geometric-mean normalisation: subtract the mean log so the ratios stay
+    # centred on 1.0 without floor bias (only ratios matter to the engine).
+    mean_log = sum(math.log(max(w, 1e-6)) for w in weights.values()) \
+               / max(len(weights), 1)
+    for strat in weights:
+        weights[strat] = math.exp(math.log(max(weights[strat], 1e-6)) - mean_log)
 
-    # Floor at a participatory level (matches fit_strategy_weights.py): 0.05
-    # is effectively disabled and multiplicative nudges can't revive it.
+    # Floor at a participatory level (matches fit_strategy_weights.py).
     for strat in weights:
         weights[strat] = min(max(weights[strat], 0.25), 20.0)
 
