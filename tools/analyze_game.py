@@ -147,8 +147,10 @@ def adjust_weights(weights, strategy_log, outcome, expected=0.5):
         for strat in weights:
             weights[strat] /= mean
 
+    # Floor at a participatory level (matches fit_strategy_weights.py): 0.05
+    # is effectively disabled and multiplicative nudges can't revive it.
     for strat in weights:
-        weights[strat] = min(max(weights[strat], 0.05), 20.0)
+        weights[strat] = min(max(weights[strat], 0.25), 20.0)
 
     return weights
 

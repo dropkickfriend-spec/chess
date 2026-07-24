@@ -98,6 +98,14 @@ def fit(X, y, iters=600, lr=0.4):
     print(f"K = {best_k:.2f}, start E = {best_e:.6f} ({len(Xs)} positions)")
 
     c = math.log(10.0) * best_k / 400.0
+    # Ridge regularisation toward the uniform prior (real weight 1.0 each).
+    # Without it, the logistic fit on a small, collinear sample zeroes most
+    # strategies and hands all the weight to one or two — the observed collapse
+    # where 9 of 16 strategies sat at the 0.05 floor and RESTRICTION ran to 6.4,
+    # effectively disabling half the eval. FIT_REG shrinks each weight back
+    # toward 1.0 unless the data strongly argues otherwise (same principle as
+    # tune.c's L2-toward-priors that stopped the piece-value runaway).
+    REG = float(os.getenv("FIT_REG", "0.15"))
     g2 = [1e-8] * N                       # Adagrad accumulators
     for it in range(iters):
         grad = [0.0] * N
@@ -109,6 +117,8 @@ def fit(X, y, iters=600, lr=0.4):
                 grad[j] += common * x[j]
         for j in range(N):
             g = grad[j] / len(Xs)
+            # pull the *real* weight (w[j]/std[j]) back toward 1.0
+            g += 2.0 * REG * (w[j] / std[j] - 1.0) / std[j]
             g2[j] += g * g
             w[j] -= lr * g / math.sqrt(g2[j])
         if (it + 1) % 200 == 0:
@@ -141,7 +151,11 @@ def main():
     mean = sum(w) / len(w)
     if mean > 1e-9:
         w = [v / mean for v in w]
-    w = [max(v, 0.05) for v in w]
+    # Floor at a participatory level, not near-zero: a strategy at 0.05 is
+    # ~20x below the mean and effectively disabled, and multiplicative per-game
+    # nudges can't lift it back. 0.25 keeps every strategy a real (if minor)
+    # voice so learning can revive it if it starts proving useful.
+    w = [max(v, 0.25) for v in w]
 
     # Guardrail: MATERIAL and its positional partner SQUARE_VALUE must stay
     # first-class terms. A fit on noisy games (or, historically, games where
