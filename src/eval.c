@@ -125,29 +125,29 @@ int action_w[3] = { 6, 2, 3 };
 // Game-plan pricing (percent of a piece's material value): participants in
 // the search's current plan appreciate, developed spectators depreciate.
 // Learned through the registry; seeds are unit scale only.
-int PLAN_PART = 8;
-int PLAN_IDLE = 4;
+int PLAN_PART = 0;
+int PLAN_IDLE = 0;
 
 // Lookahead engages strategies too: strategies executing the current plan
 // gain this percent of activity in the weight budget (learned, one knob).
-int PLAN_ENGAGE = 50;
+int PLAN_ENGAGE = 0;
 
 // Plan-relative logistics: blockage of a piece the game plan uses (or of
 // squares on the plan's routes) costs (10 + LOGI_PLAN)/10 times baseline.
 // Learned through the registry; seed makes plan blockage double price.
-int LOGI_PLAN = 10;
+int LOGI_PLAN = 0;
 
 // Line-clearance: our own men that block a slider's ray are especially costly
 // when clearing that ray would bear on the enemy king zone (LINE_KING) or an
 // enemy rook/queen (LINE_HEAVY, per target) — a pawn "in the way" of an attack
 // on the king or a heavy piece is worth less where it stands. Learned.
-int LINE_KING  = 12;
-int LINE_HEAVY = 6;
+int LINE_KING  = 0;
+int LINE_HEAVY = 0;
 
 // Square-value context: a piece standing on a game-plan square has its
 // piece-square worth scaled by (10 + SQV_PLAN)/10 — the same square is worth
 // more when it serves the plan the search is executing. Learned.
-int SQV_PLAN = 10;
+int SQV_PLAN = 0;
 
 // Certainty pricing: learned piece values are allowed to stay inflated —
 // they are the piece's worth at FULL plan execution. Material realises

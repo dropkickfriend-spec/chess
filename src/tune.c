@@ -146,8 +146,8 @@ static const char *stage_priority[] = {
     "ISOLATED_MG", "ISOLATED_EG", "DOUBLED_MG", "DOUBLED_EG",
     "BISHOP_PAIR_MG", "BISHOP_PAIR_EG", "ROOK_OPEN", "ROOK_SEMIOPEN",
     "SHIELD_BONUS",
-    "coord_w", "PLAN_PART", "PLAN_IDLE", "PLAN_ENGAGE",
-    "LINE_KING", "LINE_HEAVY", "SQV_PLAN",
+    "coord_w",   // plan-machinery knobs (PLAN_*, LOGI_PLAN, SQV_PLAN, LINE_*)
+                 // dropped: ablation measured the whole family at -137 Elo
     "passed_mg+1", "passed_eg+1",
     "pawn_eg", "king_eg",
     "pst_mg[0]", "pst_mg[5]", "pst_mg[1]", "pst_mg[2]", "pst_mg[3]", "pst_mg[4]",
