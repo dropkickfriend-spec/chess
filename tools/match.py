@@ -31,6 +31,12 @@ import chess.pgn
 DEFAULT_STOCKFISH = (shutil.which("stockfish")
                      or "/usr/games/stockfish")
 
+# Seconds between live-dashboard updates. The POST costs ~900 ms round trip, so
+# on a slow link a tighter interval buys nothing but latency. LIVE_EVERY=0 with
+# --no-live turns per-move streaming off entirely for bulk training runs, where
+# nobody is watching and only the finished games matter.
+LIVE_EVERY = float(os.environ.get("LIVE_EVERY", "2.0"))
+
 
 def supabase_insert(base_url, key, table, rows, return_repr=False, upsert=False):
     prefer = "return=representation" if return_repr else "return=minimal"
@@ -174,9 +180,25 @@ def make_live_cb(base_url, key, our_color, engine_path=None, env=None, sf_skill=
     records the per-move strategy contribution (the weight chain re-priced
     each position). Never lets a network hiccup touch the game."""
     import datetime as _dt
+    import threading as _th
     import time as _time
     last = [0.0]
     series = []
+    inflight = _th.Lock()
+
+    # Measured: the live-stream POST takes ~900 ms round trip while the engine
+    # subprocess costs ~8 ms. Done inline once a second, that network wait was
+    # eating roughly half the wall-clock of every --upload game (worse on mobile
+    # data). So post in a background thread and, if one is still in flight, DROP
+    # this update rather than queueing: a live view wants the latest position,
+    # not a backlog of stale ones, and the game never waits on the network.
+    def _post(payload):
+        try:
+            supabase_insert(base_url, key, "live_game", [payload], upsert=True)
+        except Exception:
+            pass
+        finally:
+            inflight.release()
 
     def cb(board, evals, plans=None):
         # Throttle to ~1/s. The per-move strategy breakdown spawns an engine
@@ -184,28 +206,35 @@ def make_live_cb(base_url, key, our_color, engine_path=None, env=None, sf_skill=
         # games fast (especially on phones) while the live graph still moves.
         # (evals and plans are full per-ply lists, so the game plan overlay
         # and eval trace stay full-resolution regardless of the throttle.)
+        over = board.is_game_over(claim_draw=True)
         now = _time.time()
-        if now - last[0] < 1.0 and not board.is_game_over(claim_draw=True):
+        if now - last[0] < LIVE_EVERY and not over:
             return
         last[0] = now
         if engine_path:
             c = strat_contribs(engine_path, board.fen(), env)
             if c is not None:
                 series.append(c)
-        try:
-            supabase_insert(base_url, key, "live_game", [{
-                "id": 1,
-                "our_color": our_color,
-                "uci": " ".join(m.uci() for m in board.move_stack),
-                "evals": json.dumps(evals),
-                "strat_series": json.dumps(series),
-                "plans": json.dumps(plans or []),
-                "sf_skill": sf_skill,
-                "ply": board.ply(),
-                "updated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
-            }], upsert=True)
-        except Exception:
-            pass
+        payload = {
+            "id": 1,
+            "our_color": our_color,
+            "uci": " ".join(m.uci() for m in board.move_stack),
+            "evals": json.dumps(evals),
+            "strat_series": json.dumps(series),
+            "plans": json.dumps(plans or []),
+            "sf_skill": sf_skill,
+            "ply": board.ply(),
+            "updated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        }
+        if over:
+            # Final state: post inline so the finished game is never lost to a
+            # dropped frame or a thread dying with the process.
+            if inflight.acquire(timeout=5.0):
+                _post(payload)
+            return
+        if not inflight.acquire(blocking=False):
+            return                      # previous post still going — skip this one
+        _th.Thread(target=_post, args=(payload,), daemon=True).start()
 
     cb.series = series
     return cb
@@ -220,6 +249,9 @@ def main():
     ap.add_argument("--skill", type=int, default=None, help="Stockfish Skill Level 0-20")
     ap.add_argument("--elo", type=int, default=None, help="Stockfish UCI_Elo (min 1320)")
     ap.add_argument("--pgn", default=None, help="write games to this PGN file")
+    ap.add_argument("--no-live", action="store_true",
+                    help="skip per-move live streaming (bulk runs); finished "
+                         "games are still uploaded with --upload")
     ap.add_argument("--upload", action="store_true",
                     help="store results in Supabase (needs SUPABASE_URL/SUPABASE_KEY)")
     ap.add_argument("--learn", action="store_true",
@@ -260,7 +292,7 @@ def main():
             white, black = (ours, sf) if we_are_white else (sf, ours)
 
             live_cb = None
-            if args.upload:
+            if args.upload and not args.no_live:
                 conf_l = load_supabase_env()
                 b_url = os.environ.get("SUPABASE_URL") or conf_l.get("SUPABASE_URL")
                 b_key = os.environ.get("SUPABASE_KEY") or conf_l.get("SUPABASE_KEY")
