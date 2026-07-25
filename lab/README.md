@@ -80,6 +80,7 @@ reproduces it. "±" is the Elo standard error; LOS = likelihood of superiority.
 | weights fitted on blunder positions | within 1-5% of the SPSA vector | dead end: 492 positions cannot beat the prior |
 | PAWN_PROMOTION (strategy) | **+44**, LOS 96% | the passed-pawn term that actually works |
 | KING_ACTIVITY + OPPOSITION | **0.0**, LOS 50% (exactly even) | inert in real games |
+| SPSA tuned on endgame positions | +11 Elo, and 41% of iterations had ZERO gradient | **the endgame is not an eval problem** |
 
 **The sample-size wall.** coord / blockade / pawn_struct are all sub-25-Elo
 effects measured against +/-24 error bars, and going from 80 to 128 games moved
@@ -156,6 +157,29 @@ Original framing kept for the record: we lose in the endgame, and our
 
 Useful as a DIAGNOSTIC, not as training data: fitting weights on the mined
 positions moved them 1-5% from the prior, so there was nothing to A/B.
+
+## The endgame is a SEARCH problem, not an eval problem
+
+Four independent measurements converge on this, and it rules out a whole class
+of work:
+
+1. Blunder mining: 74% of large decisive swings happen after ply 60.
+2. Ablation: the endgame eval terms are mostly inert — KING_ACTIVITY +
+   OPPOSITION score exactly 0.0 (LOS 50%), passed_eg -11 (LOS 34%). Only
+   eg_pst (+52) and PAWN_PROMOTION (+44) contribute.
+3. SPSA tuned FROM endgame positions: **41% of iterations produced zero
+   gradient** (both perturbed vectors scored identically) and the run gained
+   +11 Elo, i.e. nothing.
+4. The same SPSA on book openings: only 10% zero-gradient, +72 Elo confirmed.
+
+A zero gradient means the outcome did not depend on the weights at all. In sharp
+endgames at this depth, who wins is decided by whether the tactic is seen — not
+by how MATERIAL is priced against PAWN_STRUCTURE. So **no amount of eval tuning
+will fix the endgame weakness**; the lever is search (depth, extensions,
+endgame-aware pruning), or exact knowledge like tablebases.
+
+This is worth more than a tuned vector would have been: it says where NOT to
+spend effort.
 
 ## Deferred (next)
 
