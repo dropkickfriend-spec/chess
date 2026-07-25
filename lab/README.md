@@ -63,12 +63,22 @@ reproduces it. "±" is the Elo standard error; LOS = likelihood of superiority.
 | piece-square tables | **+103 ± 34**, LOS 99.9% | the backbone |
 | RESTRICTION (prophylaxis) | **+66 ± 33**, LOS 98% | keeper |
 | DEFENDER_LOGISTICS | **+44**, LOS 97% (costs ~8% nps) | keeper — pays for its cost |
-| blockade / pawn_struct | +26 / +22, LOS ~75-80% | probably positive, unresolved |
-| coord | -30, LOS 17% | possibly a small liability, unresolved |
+| pawn_struct | +22 ± 24, LOS 82% (128 games) | probably positive, unproven |
+| blockade | +8 ± 24, LOS 63% (128 games) | neutral |
+| coord | -19 ± 24, LOS 22% (128 games) | **kept** — did not firm up |
 | trap-risk / commitment axis | ~0, and 47% correct where decisive | **reverted** |
 | enemy-relative "initiative race" | coin flip | **reverted** |
 | borrowed-horizon book anchor | 0 Elo over 100 games | **off by default** |
 | deeper LMR (depth term) | +4 ± 30 at fixed nodes, LOS 55% | neutral — LMR already near optimum |
+| hardcoded magics | startup 377 ms -> 5.8 ms (65x) | **landed** — bit-identical search, perft clean |
+
+**The sample-size wall.** coord / blockade / pawn_struct are all sub-25-Elo
+effects measured against +/-24 error bars, and going from 80 to 128 games moved
+coord from -30 to -19 (regression toward zero = noise, not signal). Halving the
+bars needs ~4x the games (~500 each, ~1 h per term) to chase at most ~20 Elo.
+That is a bad trade against what is already banked, so all three were left
+alone. Cutting a term at LOS 22% would be exactly the guesswork this harness
+exists to prevent -- "unresolved" is a real answer, not a to-do.
 
 Two lessons that generalise beyond chess:
 
@@ -90,7 +100,9 @@ Two lessons that generalise beyond chess:
   sample-efficiency and collapse-resistance where the true optimum is known.
 - Learning-mechanism ablation: freeze the online nudge / the batch fit / the
   Texel tune in turn and measure how strength develops.
-- Resolve `coord` (-30, LOS 17%) and `blockade`/`pawn_struct` with more games.
-- Startup cost: `find_magic` recomputes magics every launch. Irrelevant to search
-  depth, but the harness and training loops restart the engine twice per game, so
-  hardcoding them would raise games/hour (faster learning and measurement).
+- coord / blockade / pawn_struct are parked at the sample-size wall (see above),
+  not forgotten -- revisit only with a much larger opening set or faster games.
+- `training_loop.py` is misdesigned: its "self-play cycle" plays 2 games vs
+  Stockfish skill 20, loses 0/2 every time by construction, and appends those
+  blowouts to the permanent training corpus. Either rewrite it as true self-play
+  or point it at a matched skill (4-6) where games are informative.
