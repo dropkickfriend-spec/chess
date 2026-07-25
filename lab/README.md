@@ -78,6 +78,8 @@ reproduces it. "±" is the Elo standard error; LOS = likelihood of superiority.
 | endgame PSTs (eg_pst) | **+52 ± 25**, LOS 98% | keeper |
 | passed-pawn bonus (eg_passed) | **-11 ± 25**, LOS 34% | **earns nothing — investigate** |
 | weights fitted on blunder positions | within 1-5% of the SPSA vector | dead end: 492 positions cannot beat the prior |
+| PAWN_PROMOTION (strategy) | **+44**, LOS 96% | the passed-pawn term that actually works |
+| KING_ACTIVITY + OPPOSITION | **0.0**, LOS 50% (exactly even) | inert in real games |
 
 **The sample-size wall.** coord / blockade / pawn_struct are all sub-25-Elo
 effects measured against +/-24 error bars, and going from 80 to 128 games moved
@@ -130,8 +132,26 @@ drops on the opponent's move and swings from already-lost positions).
 129 at a 150 cp threshold; 54% at 80 cp, so the bigger the blunder the more
 endgame-concentrated it is). The engine is not losing in the opening.
 
-Pair that with the endgame ablation above and a specific diagnosis falls out:
-we lose in the endgame, and our **passed-pawn bonus measures as worth nothing**
+### The endgame audit (what it produced)
+
+Chasing the 74% figure through the endgame machinery gave a clean split:
+
+| working | inert |
+|---|---|
+| eg_pst +52 | passed_eg -11 |
+| PAWN_PROMOTION +44 | KING_ACTIVITY + OPPOSITION 0.0 |
+
+So passed-pawn evaluation IS working -- entirely through PAWN_PROMOTION. The
+separate `passed_mg`/`passed_eg` tables (12 tuner parameters) are redundant on
+top of it. And of the three endgame-phase strategies, only one contributes.
+
+Caveat worth keeping: KING_ACTIVITY contains the bare-king mate drive, which
+only fires in K+R/K+Q vs K positions. Measuring 0 here does not prove the mate
+drive is useless -- it proves those positions are too rare in these games to
+register. That is the rare-firing blindness again, not a verdict on the term.
+
+Original framing kept for the record: we lose in the endgame, and our
+**passed-pawn bonus measures as worth nothing**
 — the central endgame concept contributing no measurable strength.
 
 Useful as a DIAGNOSTIC, not as training data: fitting weights on the mined
