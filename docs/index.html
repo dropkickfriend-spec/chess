@@ -223,6 +223,18 @@
             <div style="color:#00d4ff;font-size:0.9em;margin:16px 0 2px">Rolling score % per skill level</div>
             <div class="legend" id="levelLegend"></div>
             <canvas id="levelChart" width="1100" height="220" style="width:100%"></canvas>
+
+            <div style="color:#00d4ff;font-size:1.05em;margin:20px 0 2px">
+                <b>Best wins</b> — highest-rated victories
+            </div>
+            <div style="color:#777;font-size:0.78em;margin:0 0 6px">
+                Every win, strongest opponent first. Click a row to replay the game.
+            </div>
+            <div class="match-history"><table id="bestWins">
+                <thead><tr><th>SF skill</th><th>~Opp Elo</th><th>Colour</th>
+                    <th>Moves</th><th>When</th></tr></thead>
+                <tbody></tbody>
+            </table></div>
         </div>
 
         <div class="section">
@@ -513,6 +525,54 @@
             drawEloChart(rows);
         }
 
+        // Best wins: every victory, strongest opponent first. Clicking a row
+        // loads that game into the viewer, so a headline result is one click
+        // from the moves that produced it.
+        async function renderBestWins() {
+            const tbody = document.querySelector('#bestWins tbody');
+            if (!tbody) return;
+            const rows = await fetchJSON(
+                `${SUPABASE_URL}/rest/v1/chessbb_games` +
+                `?select=our_color,result,moves,sf_skill,uci,created_at` +
+                `&uci=not.is.null&order=sf_skill.desc.nullslast,created_at.desc&limit=400`,
+                { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
+            if (!rows || !rows.length) {
+                tbody.innerHTML = '<tr><td colspan="5">No games yet</td></tr>'; return;
+            }
+            const wins = rows.filter(r =>
+                r.result !== '1/2-1/2' &&
+                (r.result === '1-0') === (r.our_color === 'white'));
+            if (!wins.length) {
+                tbody.innerHTML = '<tr><td colspan="5">No wins yet</td></tr>'; return;
+            }
+            BEST_WINS = wins.slice(0, 25);
+            tbody.innerHTML = BEST_WINS.map((r, i) => {
+                const sk = r.sf_skill == null ? 'max' : r.sf_skill;
+                return `<tr class="bw-row" data-i="${i}" style="cursor:pointer">` +
+                    `<td><b>${sk}</b></td><td>${sfElo(r.sf_skill)}</td>` +
+                    `<td>${r.our_color}</td><td>${r.moves ?? ''}</td>` +
+                    `<td>${(r.created_at || '').slice(0, 16).replace('T', ' ')}</td></tr>`;
+            }).join('');
+            tbody.querySelectorAll('.bw-row').forEach(tr => {
+                tr.onclick = () => {
+                    const r = BEST_WINS[+tr.dataset.i];
+                    const g = buildLiveGame(r, r);
+                    if (!g || !g.moves.length) return;
+                    // Put it at the head of the history so the viewer can select
+                    // it, and mark userPicked so the live-game poller does not
+                    // immediately yank the selection away.
+                    HIST = [g].concat(HIST.filter(h => gameKey(h) !== gameKey(g)));
+                    LIVEGAME = null;
+                    userPicked = true;
+                    initViewer(compose());
+                    selectGame(0);
+                    document.getElementById('board')
+                        ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                };
+            });
+        }
+        let BEST_WINS = [];
+
         // Approximate Elo of Stockfish at each Skill Level (the widely used
         // ~1350 at skill 0, ~+75 per level). Absolute values are rough; what
         // matters is that the scale is FIXED, so the trend over time is real.
@@ -707,7 +767,15 @@
                     'Between games — recent weight snapshots (waiting for a live game)';
             }
             updateMatchTable(matches);
-            renderLevelStats();
+            // Each panel is isolated: loadData is one long async run, so before
+            // this an exception anywhere (a renamed column, a chart on empty
+            // data) killed every panel after it — which looked like "the games
+            // stopped showing" even though the data was fine.
+            for (const [name, fn] of [['level stats', renderLevelStats],
+                                      ['best wins', renderBestWins]]) {
+                try { await fn(); }
+                catch (e) { console.error(`panel "${name}" failed:`, e); }
+            }
             document.getElementById('timestamp').textContent = new Date().toLocaleString();
         }
 
