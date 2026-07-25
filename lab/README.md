@@ -240,11 +240,86 @@ That is the point: **a moving brain cannot be measured.**
 This also resolves a loose end. The "+86 Elo learned vs uniform" result measured
 the *batch fit*, never this nudge in isolation — the nudge has been undoing it.
 
+### Measured cost: -49 Elo
+
+`lab/strat_ab.py`, SPSA vector vs the collapsed vector, 64 openings / 128 games,
+both colours, depth 6:
+
+```
++55 =36 -37   SPSA scores 57.0%   Elo +49.2   LOS 97.1%
+```
+
+So forty games of `--learn` did not fail to help — it **cost about 49 Elo**,
+demolishing most of the +72 the SPSA run had bought. The learning mechanism was
+the single most destructive thing in the project after the plan machinery.
+
 Third lesson for the log, alongside "deletion beat every addition" and
 "outcome-based learning is blind to rare-firing features":
 **check the rank of your update rule.** A learning rule that cannot express the
 target configuration will look like it is learning — weights move every game —
 while being structurally incapable of finding the answer.
+
+## `replay_nudge.py` — test a learning rule without playing games
+
+The update rule is a pure function of (positions, outcome), and both are already
+stored for every game. So a candidate rule can be replayed over the existing
+corpus in seconds instead of being evaluated by a multi-hour run whose brain
+moves while you measure it.
+
+Validated against reality: replaying the real 40 games through the old rule
+reproduces the observed collapse cluster for cluster (0.8456-0.8460 against the
+run's 0.8237-0.8241, and so on), so the harness is faithful rather than a
+strawman. Two diagnostics:
+
+- **RANK** — distinct weight levels at 1% tolerance. Old rule: **3 levels across
+  15 strategies.** That is the defect stated as a number.
+- **DIRECTION** — Spearman against the ablation Elo above. Deliberately gated at
+  the small-n significance bar (|rho| > 0.68 at n=9), because a rank correlation
+  over nine points invites reading a story into noise. Neither rule has cleared
+  it, so direction remains an open question that only an A/B can settle.
+
+## v3 of the nudge: credit by predictive accuracy
+
+Participation is replaced by **which way each strategy actually called the
+game**. Per position `evalfens` gives every strategy's raw (unweighted) opinion;
+`mean/rms` over the game's positions gives a verdict in [-1, +1] from our side,
+and credit is `surprise * centred(verdict)`:
+
+| we | strategy said | verdict | weight |
+|---|---|---|---|
+| won | we were better | it was right | up |
+| lost | we were better | it misled us | down |
+| lost | we were worse | it warned us | up |
+
+Two details that matter. **Raw, not raw x weight** — otherwise a strategy's
+credit scales with the weight it already has, and whatever we currently favour
+keeps gaining. **Divide by the strategy's own RMS** — MATERIAL speaks in
+hundreds of centipawns and OPPOSITION in single digits, so on a raw scale
+MATERIAL alone would set the direction and the update would be rank-1 again.
+
+MEANREV 0.15 -> 0.02 (half-life 4.3 -> 34 games), LR 0.3 -> 0.08.
+
+Replay rank: **3 levels -> 12-14 levels** across 15 strategies. The structural
+defect is gone.
+
+### Gate: replay 400 logged games from the SPSA vector, then A/B the result
+
+| depth | score | Elo | LOS |
+|---|---|---|---|
+| 4 | 50.4% | +2.7 | 54.5% |
+| **5** | **66.4%** | **+118.4** | **100.0%** |
+| **6** | **59.0%** | **+63.1** | **99.5%** |
+
+Clears the 95% gate at two of three depths and never loses. Depth 4 — much
+shallower than anything we play — is the outlier; note the old rule by contrast
+*cost* 49 Elo, so "neutral at one depth" is a different category of result.
+
+Worth resolving an apparent contradiction: the new vector moves SQUARE_VALUE
+(ablation +103) and RESTRICTION (+66) **down**, yet plays stronger. There is no
+conflict. Ablation measured *deleting* a term; this measures *re-pricing* one. A
+term can be indispensable — zeroing it costs 103 Elo — while still being
+overweighted at 1.14. "Essential" and "overweighted" are compatible, and only
+the second is what a weight vector can fix.
 
 ## Deferred (next)
 

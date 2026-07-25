@@ -1,0 +1,17 @@
+# Final vector after the 40-game --learn run (skills 5-8), verbatim from the
+# Termux output. Five distinct values across fifteen strategies.
+weight DEVELOPMENT 1.0778
+weight CENTER_CONTROL 1.0780
+weight KING_SAFETY_OPENING 1.0776
+weight PIECE_ACTIVITY 1.1043
+weight ATTACK_POTENTIAL 1.1044
+weight PAWN_STRUCTURE 1.1030
+weight DEFENDER_LOGISTICS 1.1275
+weight KING_ACTIVITY 1.1151
+weight PAWN_PROMOTION 1.1154
+weight OPPOSITION 1.1153
+weight MATERIAL 0.8240
+weight COORDINATION 0.8238
+weight SQUARE_VALUE 0.8237
+weight BLOCKADE 0.8241
+weight RESTRICTION 0.8238

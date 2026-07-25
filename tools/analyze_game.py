@@ -159,45 +159,124 @@ def live_strategies(engine_path):
     return live or None
 
 
+def eval_contributions(engine_path, fens):
+    """Each strategy's RAW opinion of each position, from WHITE's point of view.
+
+    One batch `evalfens` call for the whole game: it reads a FEN per line and
+    prints "<name> <raw> <eff_weight>" for every strategy then "TOTAL <cp>".
+    Returns [{strat: raw}, ...] aligned with `fens`, or None if the probe fails.
+
+    We deliberately take `raw`, not `raw * eff_weight`. Raw is the strategy's
+    own judgement, independent of how much we currently trust it; weighting it
+    would make a strategy's credit proportional to its existing weight, so
+    whatever we already favour would keep gaining. Learning has to be able to
+    promote a strategy we are currently underweighting."""
+    import subprocess
+    if not fens:
+        return None
+    try:
+        p = subprocess.run([engine_path, "evalfens"],
+                           input="\n".join(fens) + "\n",
+                           capture_output=True, text=True, timeout=300,
+                           cwd=os.path.dirname(os.path.abspath(engine_path)) or ".")
+    except Exception:
+        return None
+    out, cur = [], {}
+    for line in p.stdout.splitlines():
+        f = line.split()
+        if len(f) == 2 and f[0] == "TOTAL":
+            out.append(cur)
+            cur = {}
+        elif len(f) == 3 and f[0] in STRATEGIES:
+            try:
+                cur[f[0]] = float(f[1])
+            except ValueError:
+                pass
+    return out if len(out) == len(fens) else None
+
+
+def strategy_verdicts(contribs, we_white, keys):
+    """Per strategy: which way it called the game, from OUR side, in [-1, +1].
+
+    mean(raw) / rms(raw) over the game's positions. +1 means "said we were
+    better, in every position"; -1 means "consistently said we were worse";
+    near 0 means it flip-flopped or stayed quiet, and so made no real call.
+
+    Dividing by the strategy's own RMS is what makes the strategies comparable:
+    MATERIAL speaks in hundreds of centipawns and OPPOSITION in single digits,
+    so on a raw scale MATERIAL would drown out every other term and the update
+    would collapse to a single direction again — the exact defect being fixed.
+    """
+    sign = 1.0 if we_white else -1.0
+    verdicts = {}
+    for s in keys:
+        vals = [c.get(s, 0.0) for c in contribs]
+        if not vals:
+            verdicts[s] = 0.0
+            continue
+        mean = sum(vals) / len(vals)
+        rms = math.sqrt(sum(v * v for v in vals) / len(vals))
+        verdicts[s] = sign * mean / rms if rms > 1e-9 else 0.0
+    return verdicts
+
+
 def adjust_weights(weights, strategy_log, outcome, expected=0.5,
-                   LR=0.3, MEANREV=0.15, live=None):
+                   LR=0.08, MEANREV=0.02, live=None, verdicts=None):
     """Surprise-driven weight adjustment in log space.
 
-    The previous rule multiplied each weight by (1 + LR*surprise*share) and
-    renormalised by the ARITHMETIC mean. "share" = fraction of moves a
-    strategy was active, so the six all-game strategies (share~1) grew fastest
-    on every win, inflated the mean, and the renormalise step pushed every
-    phase-specific strategy (share<0.5) DOWN — to the floor, permanently. A
-    simulation confirmed it: from a uniform start, 20 wins drove PIECE_ACTIVITY,
-    KING_SAFETY, DEVELOPMENT etc. to the 0.05/0.25 floor and left them stuck.
-    It rewarded *duration of activity*, not contribution to the result.
+    HISTORY — two rules have failed here, for the same underlying reason.
 
-    New rule (validated by that same simulation, tools test_weights3.py):
-    - work in log space so updates are symmetric and can't drive a weight <0;
-    - MEANREV pulls every weight back toward the uniform prior (1.0) each game,
-      so a crushed strategy climbs back on its own and nothing runs away;
-    - centred credit surprise*(share - mean_share): above-average participation
-      earns weight on a win (below-average loses), reversed on a loss — zero
-      sum, so it can't pump every active strategy at once;
-    - GEOMETRIC-mean normalisation (subtract the mean log), which is floor
-      neutral, instead of arithmetic-mean normalisation which floored the
-      small weights. Real differentiation comes from the --retune fit; this
-      nudge just moves the brain sensibly between retunes without collapsing.
+    v1 multiplied each weight by (1 + LR*surprise*share) and renormalised by the
+    ARITHMETIC mean, where "share" = fraction of moves a strategy was listed as
+    active. The all-game strategies (share~1) grew fastest on every win,
+    inflated the mean, and the renormalise pushed every phase-specific strategy
+    to the floor permanently.
+
+    v2 kept `share` but centred it and normalised geometrically. Measured over a
+    40-game run it collapsed 16 strategies into FIVE distinct values, identical
+    to 3 decimals within each group — because `share` came from a hardcoded
+    phase table, so the update direction was a near-constant vector and the only
+    per-game information was one scalar (`surprise`). One scalar cannot separate
+    16 strategies: the update was rank-1. Its fixed point rewarded firing
+    FREQUENCY, which measured anti-correlated with ablation ground truth
+    (SQUARE_VALUE +103 driven down, KING_ACTIVITY +0 driven up).
+
+    v3 (this rule) replaces participation with PREDICTIVE ACCURACY. `verdicts`
+    says which way each strategy called this specific game (see
+    strategy_verdicts); credit is surprise * centred(verdict):
+
+      - we won and it said we were better   -> it was right  -> weight up
+      - we lost and it said we were better  -> it misled us  -> weight down
+      - we lost and it said we were worse   -> it warned us  -> weight up
+
+    That is a genuine per-strategy signal that varies game to game, so the
+    update is full-rank and can express any configuration. Centring keeps it
+    zero-sum, matching the engine's budget model where only ratios matter.
+
+    MEANREV drops 0.15 -> 0.02. At 0.15 the log-weights decayed by 0.85 per
+    game — a 4.27-game half-life that erased the +72 Elo SPSA prior to 0.15% of
+    itself over 40 games. That was not refinement, it was deletion. 0.02 gives a
+    ~34-game half-life: a prior survives long enough to be corrected.
+
+    Falls back to the old participation signal only if `verdicts` is missing
+    (engine probe failed), so a broken probe degrades rather than crashes.
     """
     surprise = outcome - expected
-    total_moves = max(len(strategy_log), 1)
-
-    counts = {}
-    for entry in strategy_log:
-        for strat in entry["active_strategies"]:
-            counts[strat] = counts.get(strat, 0) + 1
     keys = [s for s in weights if live is None or s in live]
-    shares = {s: counts.get(s, 0) / total_moves for s in keys}
-    mean_share = sum(shares.values()) / max(len(shares), 1)
+
+    if verdicts is None:
+        total_moves = max(len(strategy_log), 1)
+        counts = {}
+        for entry in strategy_log:
+            for strat in entry["active_strategies"]:
+                counts[strat] = counts.get(strat, 0) + 1
+        verdicts = {s: counts.get(s, 0) / total_moves for s in keys}
+
+    mean_v = sum(verdicts.get(s, 0.0) for s in keys) / max(len(keys), 1)
 
     for strat in keys:
         lw = math.log(max(weights[strat], 1e-6))
-        lw = (1.0 - MEANREV) * lw + LR * surprise * (shares[strat] - mean_share)
+        lw = (1.0 - MEANREV) * lw + LR * surprise * (verdicts.get(strat, 0.0) - mean_v)
         weights[strat] = math.exp(lw)
 
     # Geometric-mean normalisation: subtract the mean log so the ratios stay
@@ -275,7 +354,21 @@ def main():
     dead = [s for s in STRATEGIES if live is not None and s not in live]
     if dead:
         print(f"  (skipping dead strategies: {', '.join(dead)})")
-    weights = adjust_weights(weights, strategy_log, outcome, expected, live=live)
+
+    # Which way did each strategy call THIS game, from our side? That is the
+    # per-strategy credit signal; without it the update is rank-1 (see
+    # adjust_weights). we_white comes from the PGN header match.py wrote.
+    import io
+    hdr = chess.pgn.read_headers(io.StringIO(pgn_text)) or {}
+    we_white = hdr.get("White", "") == "chess-bb"
+    keys = [s for s in weights if live is None or s in live]
+    contribs = eval_contributions(engine_path, [e["fen"] for e in strategy_log])
+    verdicts = strategy_verdicts(contribs, we_white, keys) if contribs else None
+    if verdicts is None:
+        print("  (eval probe failed — falling back to the participation signal)")
+
+    weights = adjust_weights(weights, strategy_log, outcome, expected,
+                             live=live, verdicts=verdicts)
 
     # Save updated weights locally
     save_weights(weights_path, weights)

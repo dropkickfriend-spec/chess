@@ -302,7 +302,10 @@ def main():
                     help="store results in Supabase (needs SUPABASE_URL/SUPABASE_KEY)")
     ap.add_argument("--learn", action="store_true",
                     help="nudge strategy_weights.txt per game and append to "
-                         "data/games_log.pgn (makes fixed-skill runs compound)")
+                         "data/games_log.pgn (makes fixed-skill runs compound). "
+                         "The rule this drives is measured: verify any change to "
+                         "it with lab/replay_nudge.py and lab/strat_ab.py before "
+                         "running a long session on it")
     ap.add_argument("--retune", action="store_true",
                     help="after the batch, rebuild the dataset, staged-tune the "
                          "value tables, and refit the strategy calibration")
