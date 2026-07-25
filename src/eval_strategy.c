@@ -597,11 +597,23 @@ static int eval_opposition(const Board *bd, int phase) {
     return eg * (24 - phase) / 24;
 }
 
+// Disable strategies whose machinery is switched off. Such a strategy scores a
+// flat 0, but while it stays "enabled" its weight still counts toward the
+// mean-normalised budget, so it dilutes every strategy that does contribute —
+// and the per-game nudge keeps crediting it (it registers as active on every
+// move), so its share grows without bound. Disabling excludes it from both the
+// mean and the score, handing the budget back to the live terms.
+static void disable_dead_strategies(StrategyWeights *w) {
+    extern int PLAN_PART, PLAN_IDLE;   // eval.c (declared in full further down)
+    if (!PLAN_PART && !PLAN_IDLE) w->enabled[STRAT_GAME_PLAN] = 0;
+}
+
 void eval_default_strategy_weights(StrategyWeights *w) {
     for (int i = 0; i < STRAT_COUNT; i++) {
         w->weight[i] = 1.0f;
         w->enabled[i] = 1;
     }
+    disable_dead_strategies(w);
 }
 
 int eval_load_strategy_weights(const char *path, StrategyWeights *w) {
@@ -610,7 +622,7 @@ int eval_load_strategy_weights(const char *path, StrategyWeights *w) {
         eval_default_strategy_weights(w);
         return 0;
     }
-    
+
     char line[256];
     while (fgets(line, sizeof(line), f)) {
         int idx;
@@ -619,6 +631,7 @@ int eval_load_strategy_weights(const char *path, StrategyWeights *w) {
             w->weight[idx] = wt;
     }
     fclose(f);
+    disable_dead_strategies(w);
     return 1;
 }
 
