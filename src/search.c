@@ -158,6 +158,8 @@ static int hist_base;           // entries provided by the game
 static int hist_len;
 
 static long long nodes;
+long long search_node_limit = 0;   // 0 = unlimited; set by uci.c "go nodes N"
+int lmr_deep = 0;                  // CHESS_LMR2=1: add a depth term to LMR
 static int stop_search;
 static struct timespec deadline;
 static int killers[MAX_PLY][2];
@@ -196,6 +198,7 @@ static long long now_ms(void) {
 }
 
 static void check_time(void) {
+    if (search_node_limit && nodes >= search_node_limit) { stop_search = 1; return; }
     long long dl = deadline.tv_sec * 1000LL + deadline.tv_nsec / 1000000LL;
     if (now_ms() >= dl) stop_search = 1;
 }
@@ -469,6 +472,7 @@ static int negamax(Board *bd, int depth, int alpha, int beta, int ply, int can_n
                 && !M_CAP(move) && !M_PROMO(move)
                 && move != killers[ply][0] && move != killers[ply][1]) {
                 red = 1 + (i >= 8) + (i >= 16);
+                if (lmr_deep) red += (depth >= 6) + (depth >= 12);  // cut deeper
                 if (red > depth - 2) red = depth - 2;
             }
             score = -negamax(bd, depth - 1 - red, -alpha - 1, -alpha, ply + 1, 1);

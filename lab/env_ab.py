@@ -33,7 +33,7 @@ def open_engine(weights, flag, on, wd):
     return chess.engine.SimpleEngine.popen_uci(ab_match.ENGINE, env=env, cwd=wd)
 
 
-def play(weights, flag, wflag, bflag, opening, depth, wd, max_plies=200):
+def play(weights, flag, wflag, bflag, opening, limit, wd, max_plies=200):
     board = chess.Board()
     for mv in opening.split():
         board.push_uci(mv)
@@ -42,7 +42,7 @@ def play(weights, flag, wflag, bflag, opening, depth, wd, max_plies=200):
     try:
         while not board.is_game_over(claim_draw=True) and board.ply() < max_plies:
             eng = we if board.turn == chess.WHITE else be
-            board.push(eng.play(board, chess.engine.Limit(depth=depth)).move)
+            board.push(eng.play(board, limit).move)
     finally:
         we.quit(); be.quit()
     if board.is_checkmate():
@@ -55,19 +55,26 @@ def main():
     ap.add_argument("flag", help="env var; A = flag SET, B = flag unset")
     ap.add_argument("--weights", default=ab_match.BASELINE_WEIGHTS)
     ap.add_argument("--depth", type=int, default=6)
+    ap.add_argument("--nodes", type=int, default=0,
+                    help="fixed node budget per move (correct for search-efficiency); "
+                         "overrides --depth")
     ap.add_argument("--openings", type=int, default=0)
     args = ap.parse_args()
+
+    limit = (chess.engine.Limit(nodes=args.nodes) if args.nodes
+             else chess.engine.Limit(depth=args.depth))
+    budget = f"{args.nodes} nodes" if args.nodes else f"depth {args.depth}"
 
     wd = tempfile.mkdtemp()
     openings = ab_match.load_openings(args.openings)
     print(f"env A/B: {args.flag} SET vs unset, {len(openings)} openings "
-          f"-> {2*len(openings)} games, depth {args.depth}")
+          f"-> {2*len(openings)} games, {budget}")
 
     scores, w, d, l = [], 0, 0, 0
     for op in openings:
-        r = play(args.weights, args.flag, True, False, op, args.depth, wd)  # SET white
+        r = play(args.weights, args.flag, True, False, op, limit, wd)  # SET white
         scores.append(r); w += r == 1.0; d += r == 0.5; l += r == 0.0
-        r = play(args.weights, args.flag, False, True, op, args.depth, wd)  # SET black
+        r = play(args.weights, args.flag, False, True, op, limit, wd)  # SET black
         a = 1.0 - r
         scores.append(a); w += a == 1.0; d += a == 0.5; l += a == 0.0
 

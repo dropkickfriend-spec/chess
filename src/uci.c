@@ -60,8 +60,10 @@ static void cmd_position(char *line) {
 }
 
 static void cmd_go(char *line) {
+    extern long long search_node_limit;   // search.c: 0 = unlimited
     int movetime = 0, depth = 0;
     int wtime = 0, btime = 0, winc = 0, binc = 0;
+    long long node_limit = 0;
 
     char *tok = strtok(line + 3, " \n");
     while (tok) {
@@ -71,6 +73,7 @@ static void cmd_go(char *line) {
             if (!val) break;
             if      (strcmp(tok, "movetime") == 0) movetime = atoi(val);
             else if (strcmp(tok, "depth")    == 0) depth = atoi(val);
+            else if (strcmp(tok, "nodes")    == 0) node_limit = atoll(val);
             else if (strcmp(tok, "wtime")    == 0) wtime = atoi(val);
             else if (strcmp(tok, "btime")    == 0) btime = atoi(val);
             else if (strcmp(tok, "winc")     == 0) winc = atoi(val);
@@ -78,6 +81,9 @@ static void cmd_go(char *line) {
         }
         tok = strtok(NULL, " \n");
     }
+
+    search_node_limit = node_limit;
+    if (node_limit && !movetime) movetime = 3600000;   // nodes cap the search
 
     if (!movetime) {
         int mytime = pos.side == WHITE ? wtime : btime;

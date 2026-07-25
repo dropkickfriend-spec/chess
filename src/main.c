@@ -72,6 +72,8 @@ int main(int argc, char **argv) {
       if (a && a[0] == '1') book_anchor_on = 1; }
     // Toggle to measure DEFENDER_LOGISTICS (the eval's most expensive term).
     { extern int eval_logistics_on; if (getenv("CHESS_NOLOGI")) eval_logistics_on = 0; }
+    // Search-efficiency experiment: deeper LMR (measured at fixed nodes).
+    { extern int lmr_deep; if (getenv("CHESS_LMR2")) lmr_deep = 1; }
 
     if (argc >= 2 && strcmp(argv[1], "perft") == 0) {
         int depth = argc >= 3 ? atoi(argv[2]) : 5;
