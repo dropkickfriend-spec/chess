@@ -71,6 +71,9 @@ reproduces it. "±" is the Elo standard error; LOS = likelihood of superiority.
 | borrowed-horizon book anchor | 0 Elo over 100 games | **off by default** |
 | deeper LMR (depth term) | +4 ± 30 at fixed nodes, LOS 55% | neutral — LMR already near optimum |
 | hardcoded magics | startup 377 ms -> 5.8 ms (65x) | **landed** — bit-identical search, perft clean |
+| learned strategy weights vs uniform | **+86 Elo**, LOS 100% (128 games) | the per-game nudge genuinely works |
+| weight fit restarting from uniform | erased that +86 Elo every retune | **fixed** — fit now warm-starts from current weights |
+| SPSA-tuned weights vs learned start | **+72 Elo**, LOS 99.9% (128 games, depth 6) | **adopt** — `data/strategy_weights_spsa.txt` |
 
 **The sample-size wall.** coord / blockade / pawn_struct are all sub-25-Elo
 effects measured against +/-24 error bars, and going from 80 to 128 games moved
@@ -92,6 +95,23 @@ Two lessons that generalise beyond chess:
    seeds were right, but because those terms fire too rarely to register in a
    result-prediction objective. Rare features can be neither learned nor
    ablation-tested from ordinary games.
+
+## `spsa.py` — tune weights against strength itself
+
+The Texel-style fit optimises a proxy ("predict the result from a static eval")
+that disagrees with strength: unregularised it halves SQUARE_VALUE, measured at
++103 Elo. SPSA instead kicks every live weight +/- c at once, plays the two
+vectors against each other over the SAME openings both colours (the paired
+design cancels opening luck), and steps toward the winner. Noisy per iteration
+but unbiased, and it cannot converge on something that predicts well yet plays
+badly.
+
+Result: 80 iterations x 12 games from the nudged weights produced **+72 Elo**
+(LOS 99.9%, 128 games at depth 6). It generalises -- held-out openings it never
+trained on scored 67.5% at depth 4 and 77.5% at depth 5, so it is not overfitting
+the training openings. **Always validate on held-out openings AND a different
+depth**: the deterministic engine plus a fixed opening set makes in-sample
+validation easy to fool yourself with.
 
 ## Deferred (next)
 

@@ -1,0 +1,16 @@
+weight 0 0.9004
+weight 1 1.0472
+weight 2 0.8123
+weight 3 1.0310
+weight 4 1.1202
+weight 5 0.4794
+weight 6 0.8017
+weight 7 0.6381
+weight 8 0.7504
+weight 9 0.6921
+weight 10 1.4663
+weight 11 1.2554
+weight 12 1.3349
+weight 13 1.1353
+weight 14 1.5893
+weight 15 1.2808
