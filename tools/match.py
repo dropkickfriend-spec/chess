@@ -74,44 +74,90 @@ def load_supabase_env():
     return conf
 
 
-def upload_match(sf_skill, sf_elo, movetime, wins, draws, losses, games):
+def _supabase_creds():
     conf = load_supabase_env()
-    base_url = os.environ.get("SUPABASE_URL") or conf.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY") or conf.get("SUPABASE_KEY")
+    return (os.environ.get("SUPABASE_URL") or conf.get("SUPABASE_URL"),
+            os.environ.get("SUPABASE_KEY") or conf.get("SUPABASE_KEY"))
+
+
+def open_match(sf_skill, sf_elo, movetime):
+    """Create the match row UP FRONT and return (base_url, key, match_id).
+
+    Games used to be uploaded only after a whole match finished, so an
+    interrupted run lost every completed game in it — a container restart cost
+    7 finished games at skill 3. Opening the match first lets each game be
+    written as it ends, so an interrupt costs at most the game in flight.
+    Returns None if Supabase is not configured (caller then skips uploading).
+    """
+    base_url, key = _supabase_creds()
     if not base_url or not key:
         print("upload skipped: set SUPABASE_URL and SUPABASE_KEY "
               "(env or supabase.env)", file=sys.stderr)
-        return
+        return None
     try:
         sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
                              capture_output=True, text=True).stdout.strip() or None
     except OSError:
         sha = None
-
     match = supabase_insert(base_url.rstrip("/"), key, "chessbb_matches", [{
         "opponent": "Stockfish 16",
         "sf_skill": sf_skill,
         "sf_elo": sf_elo,
         "movetime_ms": int(movetime * 1000),
         "engine_sha": sha,
-        "wins": wins, "draws": draws, "losses": losses,
+        "wins": 0, "draws": 0, "losses": 0,
     }], return_repr=True)
-    match_id = match[0]["id"]
+    return base_url.rstrip("/"), key, match[0]["id"]
 
-    supabase_insert(base_url.rstrip("/"), key, "chessbb_games", [{
-        "match_id": match_id,
-        "round": g["round"],
-        "our_color": g["our_color"],
-        "result": g["result"],
-        "outcome": g["outcome"],
-        "moves": g["moves"],
-        "pgn": g["pgn"],
-        "uci": g.get("uci"),
-        "evals": g.get("evals"),
-        "strat_series": g.get("strat_series"),
-        "sf_skill": sf_skill,
-    } for g in games])
-    print(f"uploaded match {match_id} ({len(games)} games) to Supabase")
+
+def upload_game(handle, sf_skill, g):
+    """Write one finished game immediately. Never lets a network error end the
+    run — a failed upload costs that game, not the batch."""
+    if not handle:
+        return
+    base_url, key, match_id = handle
+    try:
+        supabase_insert(base_url, key, "chessbb_games", [{
+            "match_id": match_id,
+            "round": g["round"], "our_color": g["our_color"],
+            "result": g["result"], "outcome": g["outcome"],
+            "moves": g["moves"], "pgn": g["pgn"],
+            "uci": g.get("uci"), "evals": g.get("evals"),
+            "strat_series": g.get("strat_series"),
+            "sf_skill": sf_skill,
+        }])
+    except Exception as e:
+        print(f"  (game upload failed: {e})", file=sys.stderr)
+
+
+def close_match(handle, wins, draws, losses):
+    """Patch the final W/D/L onto the match row."""
+    if not handle:
+        return
+    base_url, key, match_id = handle
+    try:
+        req = urllib.request.Request(
+            f"{base_url}/rest/v1/chessbb_matches?id=eq.{match_id}",
+            data=json.dumps({"wins": wins, "draws": draws,
+                             "losses": losses}).encode(),
+            headers={"apikey": key, "Authorization": f"Bearer {key}",
+                     "Content-Type": "application/json",
+                     "Prefer": "return=minimal"},
+            method="PATCH")
+        urllib.request.urlopen(req).read()
+    except Exception as e:
+        print(f"  (match summary update failed: {e})", file=sys.stderr)
+    print(f"match {match_id}: +{wins} ={draws} -{losses} recorded in Supabase")
+
+
+def upload_match(sf_skill, sf_elo, movetime, wins, draws, losses, games):
+    """Batch upload for callers that already hold a finished game list."""
+    handle = open_match(sf_skill, sf_elo, movetime)
+    if not handle:
+        return
+    for g in games:
+        upload_game(handle, sf_skill, g)
+    close_match(handle, wins, draws, losses)
 
 
 def pv_plan(mover, pv):
@@ -275,6 +321,10 @@ def main():
     pgn_out = open(args.pgn, "w") if args.pgn else None
     wins = draws = losses = 0
     played = []
+    # Open the match row before playing so each finished game can be written
+    # immediately (see open_match): an interrupted run keeps its finished games.
+    match_handle = open_match(args.skill, args.elo, args.movetime) \
+        if args.upload else None
     try:
         for g in range(args.games):
             # Create fresh engine instances for each game to avoid TT pollution
@@ -348,7 +398,7 @@ def main():
             game.headers["Round"] = str(g + 1)
             game.headers["Result"] = result
 
-            played.append({
+            row = {
                 "round": g + 1,
                 "our_color": "white" if we_are_white else "black",
                 "result": result if result != "*" else "1/2-1/2",
@@ -358,7 +408,12 @@ def main():
                 "uci": " ".join(m.uci() for m in board.move_stack),
                 "evals": json.dumps(evals),
                 "strat_series": json.dumps(strat_series),
-            })
+            }
+            played.append(row)
+            # Durable as it goes: write this game now rather than waiting for
+            # the match to end, so an interrupted run keeps everything it
+            # actually finished.
+            upload_game(match_handle, args.skill, row)
             if pgn_out:
                 print(game, file=pgn_out, flush=True)
                 print(file=pgn_out)
@@ -389,9 +444,8 @@ def main():
     print(f"\nchess-bb vs {sf_desc}: +{wins} ={draws} -{losses}  "
           f"({score}/{n} = {100*score/max(n,1):.0f}%)")
 
-    if args.upload:
-        upload_match(args.skill, args.elo, args.movetime,
-                     wins, draws, losses, played)
+    # Games were uploaded one by one as they finished; just record the summary.
+    close_match(match_handle, wins, draws, losses)
 
     # --retune: the slow deep learning — relearn the square/piece value tables
     # and refit the strategy calibration from the whole (now larger) log.
