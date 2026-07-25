@@ -11,6 +11,7 @@ Usage:
   Adjusts weights.txt and uploads to Supabase if configured.
 """
 import math
+import os
 import sys
 import chess
 import chess.pgn
@@ -113,8 +114,31 @@ def save_weights(path, weights):
             w = weights.get(strat, 1.0)
             f.write(f"weight {idx} {w}\n")
 
+def live_strategies(engine_path):
+    """Names the engine still scores. A strategy whose machinery is switched
+    off (e.g. GAME_PLAN once the plan knobs are zeroed) reports an effective
+    weight of 0 and is excluded from the engine's budget entirely — nudging its
+    weight afterwards just makes a dead number drift upward forever, since it
+    counts as 'active' on every move. Returns None if the probe fails, meaning
+    "treat everything as live" (safe default)."""
+    import subprocess
+    try:
+        p = subprocess.run([engine_path, "evalfens"],
+                           input=chess.STARTING_FEN + "\n",
+                           capture_output=True, text=True, timeout=15,
+                           cwd=os.path.dirname(os.path.abspath(engine_path)) or ".")
+    except Exception:
+        return None
+    live = set()
+    for line in p.stdout.splitlines():
+        f = line.split()
+        if len(f) == 3 and f[0] in STRATEGIES and float(f[2]) != 0.0:
+            live.add(f[0])
+    return live or None
+
+
 def adjust_weights(weights, strategy_log, outcome, expected=0.5,
-                   LR=0.3, MEANREV=0.15):
+                   LR=0.3, MEANREV=0.15, live=None):
     """Surprise-driven weight adjustment in log space.
 
     The previous rule multiplied each weight by (1 + LR*surprise*share) and
@@ -145,23 +169,23 @@ def adjust_weights(weights, strategy_log, outcome, expected=0.5,
     for entry in strategy_log:
         for strat in entry["active_strategies"]:
             counts[strat] = counts.get(strat, 0) + 1
-    shares = {s: counts.get(s, 0) / total_moves for s in weights}
+    keys = [s for s in weights if live is None or s in live]
+    shares = {s: counts.get(s, 0) / total_moves for s in keys}
     mean_share = sum(shares.values()) / max(len(shares), 1)
 
-    for strat in weights:
+    for strat in keys:
         lw = math.log(max(weights[strat], 1e-6))
         lw = (1.0 - MEANREV) * lw + LR * surprise * (shares[strat] - mean_share)
         weights[strat] = math.exp(lw)
 
     # Geometric-mean normalisation: subtract the mean log so the ratios stay
     # centred on 1.0 without floor bias (only ratios matter to the engine).
-    mean_log = sum(math.log(max(w, 1e-6)) for w in weights.values()) \
-               / max(len(weights), 1)
-    for strat in weights:
+    mean_log = sum(math.log(max(weights[s], 1e-6)) for s in keys) / max(len(keys), 1)
+    for strat in keys:
         weights[strat] = math.exp(math.log(max(weights[strat], 1e-6)) - mean_log)
 
     # Floor at a participatory level (matches fit_strategy_weights.py).
-    for strat in weights:
+    for strat in keys:
         weights[strat] = min(max(weights[strat], 0.25), 20.0)
 
     return weights
@@ -225,7 +249,11 @@ def main():
     weights = load_weights(weights_path)
 
     # Adjust based on outcome relative to expectation
-    weights = adjust_weights(weights, strategy_log, outcome, expected)
+    live = live_strategies(engine_path)
+    dead = [s for s in STRATEGIES if live is not None and s not in live]
+    if dead:
+        print(f"  (skipping dead strategies: {', '.join(dead)})")
+    weights = adjust_weights(weights, strategy_log, outcome, expected, live=live)
 
     # Save updated weights locally
     save_weights(weights_path, weights)

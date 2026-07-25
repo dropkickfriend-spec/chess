@@ -49,6 +49,30 @@ NAMES = ["DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING", "PIECE_ACTIVITY
 FLOOR, CEIL = 0.25, 4.0
 
 
+def live_strategies(values):
+    """Ask the engine which strategies are actually live.
+
+    A strategy whose machinery is switched off (e.g. GAME_PLAN once the plan
+    knobs are zeroed) reports an effective weight of 0 — the engine excludes it
+    from both the score and the weight budget. Perturbing such a dimension is
+    pure waste: it cannot change a game's result, so it contributes nothing to
+    the gradient while still consuming part of every perturbation.
+    """
+    import subprocess
+    env = dict(os.environ)
+    env["CHESS_WEIGHTS"] = os.path.abspath(values)
+    p = subprocess.run([ab_match.ENGINE, "evalfens"],
+                       input=chess.STARTING_FEN + "\n",
+                       capture_output=True, text=True,
+                       cwd=os.path.dirname(ab_match.ENGINE), env=env)
+    live = [True] * N
+    for line in p.stdout.splitlines():
+        f = line.split()
+        if len(f) == 3 and f[0] in NAMES:
+            live[NAMES.index(f[0])] = float(f[2]) != 0.0
+    return live
+
+
 def load_weights(path):
     w = [1.0] * N
     if path and os.path.exists(path):
@@ -68,11 +92,17 @@ def write_weights(w, path):
             f.write(f"weight {i} {v:.4f}\n")
 
 
-def normalise(w):
-    """Only ratios matter to the engine; keep the mean at 1.0 and stay in range."""
+def normalise(w, live=None):
+    """Only ratios matter to the engine; keep the mean at 1.0 and stay in range.
+    Dead strategies are excluded from the mean (the engine excludes them too)."""
     w = [min(max(v, FLOOR), CEIL) for v in w]
-    m = sum(w) / len(w)
-    return [v / m for v in w] if m > 1e-9 else w
+    idx = [i for i in range(len(w)) if (live is None or live[i])]
+    if not idx:
+        return w
+    m = sum(w[i] for i in idx) / len(idx)
+    if m <= 1e-9:
+        return w
+    return [w[i] / m if (live is None or live[i]) else w[i] for i in range(len(w))]
 
 
 def side_dir(w):
@@ -129,7 +159,11 @@ def main():
 
     rng = random.Random(args.seed)
     allops = ab_match.load_openings(0)
-    theta = normalise(load_weights(args.start))
+    live = live_strategies(args.values)
+    dead = [NAMES[i] for i in range(N) if not live[i]]
+    if dead:
+        print(f"skipping dead strategies (engine reports eff 0): {', '.join(dead)}")
+    theta = normalise(load_weights(args.start), live)
     start = list(theta)
 
     print(f"SPSA: {args.iters} iters x {args.openings_per_iter} openings "
@@ -143,9 +177,11 @@ def main():
         ck = args.c / (k ** 0.101)
         ak = args.a / (k ** 0.602)
 
-        delta = [rng.choice([-1.0, 1.0]) for _ in range(N)]
-        plus = normalise([t * (1 + ck * d) for t, d in zip(theta, delta)])
-        minus = normalise([t * (1 - ck * d) for t, d in zip(theta, delta)])
+        # Perturb only live dimensions — a dead strategy cannot change a result,
+        # so kicking it would spend part of the gradient estimate on nothing.
+        delta = [rng.choice([-1.0, 1.0]) if live[i] else 0.0 for i in range(N)]
+        plus = normalise([t * (1 + ck * d) for t, d in zip(theta, delta)], live)
+        minus = normalise([t * (1 - ck * d) for t, d in zip(theta, delta)], live)
 
         # Rotate which openings this iteration sees, so successive gradients
         # sample different positions instead of overfitting one set.
@@ -154,7 +190,8 @@ def main():
 
         score = match(plus, minus, ops, args.values, args.depth)
         g = score - 0.5                       # >0 => the + side played better
-        theta = normalise([t * (1 + ak * g * 2.0 * d) for t, d in zip(theta, delta)])
+        theta = normalise([t * (1 + ak * g * 2.0 * d) for t, d in zip(theta, delta)],
+                          live)
 
         print(f"iter {k:3d}: +side {100*score:5.1f}%  step {ak*g*2:+.3f}  "
               f"MAT={theta[10]:.2f} SQV={theta[13]:.2f} RES={theta[15]:.2f}",
@@ -167,7 +204,8 @@ def main():
 
     write_weights(theta, args.out)
     print("\nfinal weights -> " + args.out)
-    for n, v in sorted(zip(NAMES, theta), key=lambda t: -t[1]):
+    for n, v in sorted(((NAMES[i], theta[i]) for i in range(N) if live[i]),
+                       key=lambda t: -t[1]):
         print(f"  {n:20s} {v:.4f}")
 
     print("\nfinal validation vs start (32 openings, 64 games)...")
