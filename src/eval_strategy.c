@@ -901,9 +901,20 @@ static float weight_mean(const Board *bd, const StrategyWeights *w, int phase,
 // ratios matter — raising PAWN_PROMOTION (or KING_SAFETY) automatically
 // dilutes MATERIAL and everything else on that same move, and uniformly
 // inflating all weights changes nothing.
+int eval_endgame_on = 1;   // CHESS_NOEG=1 disables the endgame recognizers
+
 int eval_with_strategies(const Board *bd, const StrategyWeights *w) {
     int phase, raw[STRAT_COUNT];
     float eff[STRAT_COUNT];
+
+    // Exact endgame knowledge first: a recognised theoretical draw is 0, full
+    // stop. No weighting of material or squares can be right about a position
+    // whose result is already proven — the engine used to score a dead K+P vs K
+    // draw at +371 and could not distinguish it from the won version.
+    {
+        extern int eval_endgame_draw(const Board *bd);
+        if (eval_endgame_on && eval_endgame_draw(bd)) return 0;
+    }
 
     gather_raw(bd, &phase, raw);
     weight_mean(bd, w, phase, eff);

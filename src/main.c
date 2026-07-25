@@ -74,6 +74,9 @@ int main(int argc, char **argv) {
     { extern int eval_logistics_on; if (getenv("CHESS_NOLOGI")) eval_logistics_on = 0; }
     // Search-efficiency experiment: deeper LMR (measured at fixed nodes).
     { extern int lmr_deep; if (getenv("CHESS_LMR2")) lmr_deep = 1; }
+    // Endgame recognizers on by default; CHESS_NOEG=1 turns them off to A/B them.
+    { extern int eval_endgame_on; if (getenv("CHESS_NOEG")) eval_endgame_on = 0; }
+    { extern int kpk_bitbase_on; if (getenv("CHESS_KPK")) kpk_bitbase_on = 1; }
 
     if (argc >= 2 && strcmp(argv[1], "perft") == 0) {
         int depth = argc >= 3 ? atoi(argv[2]) : 5;
