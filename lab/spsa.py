@@ -40,11 +40,11 @@ import chess.engine
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ab_match
 
-N = 16
 NAMES = ["DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING", "PIECE_ACTIVITY",
          "ATTACK_POTENTIAL", "PAWN_STRUCTURE", "DEFENDER_LOGISTICS", "KING_ACTIVITY",
-         "PAWN_PROMOTION", "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN",
+         "PAWN_PROMOTION", "OPPOSITION", "MATERIAL", "COORDINATION",
          "SQUARE_VALUE", "BLOCKADE", "RESTRICTION"]
+N = len(NAMES)
 
 FLOOR, CEIL = 0.25, 4.0
 
@@ -88,8 +88,8 @@ def load_weights(path):
 
 def write_weights(w, path):
     with open(path, "w") as f:
-        for i, v in enumerate(w):
-            f.write(f"weight {i} {v:.4f}\n")
+        for name, v in zip(NAMES, w):
+            f.write(f"weight {name} {v:.4f}\n")
 
 
 def normalise(w, live=None):

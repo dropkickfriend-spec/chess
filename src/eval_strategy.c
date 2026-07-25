@@ -597,23 +597,33 @@ static int eval_opposition(const Board *bd, int phase) {
     return eg * (24 - phase) / 24;
 }
 
-// Disable strategies whose machinery is switched off. Such a strategy scores a
-// flat 0, but while it stays "enabled" its weight still counts toward the
-// mean-normalised budget, so it dilutes every strategy that does contribute —
-// and the per-game nudge keeps crediting it (it registers as active on every
-// move), so its share grows without bound. Disabling excludes it from both the
-// mean and the score, handing the budget back to the live terms.
-static void disable_dead_strategies(StrategyWeights *w) {
-    extern int PLAN_PART, PLAN_IDLE;   // eval.c (declared in full further down)
-    if (!PLAN_PART && !PLAN_IDLE) w->enabled[STRAT_GAME_PLAN] = 0;
-}
-
 void eval_default_strategy_weights(StrategyWeights *w) {
     for (int i = 0; i < STRAT_COUNT; i++) {
         w->weight[i] = 1.0f;
         w->enabled[i] = 1;
     }
-    disable_dead_strategies(w);
+}
+
+// Slot order as it stood when weight files were keyed by integer index. Kept so
+// old files still load correctly after a strategy is deleted from the middle of
+// the enum: without it, dropping GAME_PLAN (old index 12) would silently shift
+// SQUARE_VALUE/BLOCKADE/RESTRICTION down one and hand each of them the wrong
+// weight. A name here that no longer exists in strategy_names is simply
+// skipped, which is exactly what should happen to a retired strategy.
+static const char *legacy_slot_names[] = {
+    "DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
+    "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE",
+    "DEFENDER_LOGISTICS", "KING_ACTIVITY", "PAWN_PROMOTION",
+    "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN", "SQUARE_VALUE",
+    "BLOCKADE", "RESTRICTION", "TRANSIT"
+};
+#define LEGACY_SLOT_N ((int)(sizeof(legacy_slot_names) / sizeof(legacy_slot_names[0])))
+
+// -1 when the name is not a live strategy (retired, or a typo).
+static int strategy_index_by_name(const char *name) {
+    for (int i = 0; i < STRAT_COUNT; i++)
+        if (strcmp(strategy_names[i], name) == 0) return i;
+    return -1;
 }
 
 int eval_load_strategy_weights(const char *path, StrategyWeights *w) {
@@ -625,13 +635,24 @@ int eval_load_strategy_weights(const char *path, StrategyWeights *w) {
 
     char line[256];
     while (fgets(line, sizeof(line), f)) {
-        int idx;
+        char key[64];
         float wt;
-        if (sscanf(line, "weight %d %f", &idx, &wt) == 2 && idx >= 0 && idx < STRAT_COUNT)
-            w->weight[idx] = wt;
+        if (sscanf(line, "weight %63s %f", key, &wt) != 2) continue;
+        // Preferred form: "weight SQUARE_VALUE 1.1353". Names survive enum
+        // edits; integer indices do not.
+        int idx = strategy_index_by_name(key);
+        if (idx < 0) {
+            // Legacy form: "weight 13 1.1353". Translate through the old slot
+            // order rather than trusting the number to still mean the same
+            // strategy.
+            char *end;
+            long slot = strtol(key, &end, 10);
+            if (*end || end == key || slot < 0 || slot >= LEGACY_SLOT_N) continue;
+            idx = strategy_index_by_name(legacy_slot_names[slot]);
+        }
+        if (idx >= 0) w->weight[idx] = wt;
     }
     fclose(f);
-    disable_dead_strategies(w);
     return 1;
 }
 
@@ -639,49 +660,19 @@ const char *strategy_names[STRAT_COUNT] = {
     "DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
     "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE",
     "DEFENDER_LOGISTICS", "KING_ACTIVITY", "PAWN_PROMOTION",
-    "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN", "SQUARE_VALUE",
+    "OPPOSITION", "MATERIAL", "COORDINATION", "SQUARE_VALUE",
     "BLOCKADE", "RESTRICTION"
 };
 
 extern int PLAN_PART, PLAN_IDLE, PLAN_ENGAGE, CERT_FLOOR, LOGI_PLAN;
 extern int plan_certainty;
 
-// Strategy: GAME_PLAN — lookahead determines current piece worth. The last
-// completed search depth's principal variation IS the game plan for this
-// exact position; the next iteration's eval matches every piece against it.
-// A piece is priced by its DEGREE of involvement in the plan, not a binary
-// membership: standing on its side's plan square counts double, and a piece
-// whose attacks bear on the plan's squares (executing/supporting the line)
-// adds another degree. Developed pieces in nobody's plan depreciate. No
-// averages — the plan is recomputed from scratch each search per position.
-static int eval_game_plan(const Board *bd, int phase, const AttackInfo *ai) {
-    (void)phase;
-    if (!PLAN_PART && !PLAN_IDLE) return 0;   // machinery disabled: skip the walk
-    U64 plan_all = plan_squares[WHITE] | plan_squares[BLACK];
-    if (!plan_all) return 0;   // no lookahead yet (depth 1, tune, tooling)
-
-    int score = 0;
-    for (int side = WHITE; side <= BLACK; side++) {
-        int sign = side == WHITE ? 1 : -1;
-        int base = side == WHITE ? WP : BP;
-        U64 plan = plan_squares[side];
-        for (int pt = 0; pt <= 5; pt++) {
-            int val = pt == 5 ? 350 : material_mg[pt];  // king plans like a minor
-            U64 bb = bd->bb[base + pt];
-            while (bb) {
-                int sq = LSB(bb); POP_BIT(bb, sq);
-                int on_plan  = (plan & (1ULL << sq)) ? 1 : 0;
-                int supports = (pt >= 1 && (ai->att[sq] & plan)) ? 1 : 0;
-                int degree = on_plan * 2 + supports;   // 0..3
-                if (degree)
-                    score += sign * val * PLAN_PART * degree / 200;
-                else if (pt >= 1 && pt <= 4 && !(plan_all & (1ULL << sq)))
-                    score -= sign * val * PLAN_IDLE / 100;
-            }
-        }
-    }
-    return score;
-}
+// GAME_PLAN used to live here: the last completed iteration's PV was treated as
+// "the plan", and every piece was priced by its degree of involvement in it.
+// Ablation measured the whole plan machinery at -137 Elo (LOS 0%), with the
+// GAME_PLAN term itself the largest single contributor at -85, so the knobs
+// were zeroed and the strategy is now removed outright. plan_squares survives
+// because SQUARE_VALUE, PIECE_ACTIVITY and COORDINATION still read it.
 
 extern int coord_w[COORD_N];
 
@@ -792,7 +783,6 @@ static void gather_raw(const Board *bd, int *phase_out, int raw[STRAT_COUNT]) {
     raw[STRAT_OPPOSITION]          = eval_opposition(bd, phase);
     raw[STRAT_PAWN_PROMOTION]      = eval_pawn_promotion(bd, phase);
     raw[STRAT_COORDINATION]        = eval_coordination(bd, phase, &ai);
-    raw[STRAT_GAME_PLAN]           = eval_game_plan(bd, phase, &ai);
     raw[STRAT_SQUARE_VALUE]        = eval_square_value(bd, phase);
     raw[STRAT_BLOCKADE]            = eval_blockade(bd, phase);
     raw[STRAT_RESTRICTION]         = eval_restriction(bd, phase, &ai);
@@ -813,7 +803,6 @@ static void gather_raw(const Board *bd, int *phase_out, int raw[STRAT_COUNT]) {
     int floor_ = CERT_FLOOR < 0 ? 0 : CERT_FLOOR > 100 ? 100 : CERT_FLOOR;
     int realise = floor_ + (100 - floor_) * plan_certainty / 100;
     raw[STRAT_MATERIAL]     = raw[STRAT_MATERIAL]     * realise / 100;
-    raw[STRAT_GAME_PLAN]    = raw[STRAT_GAME_PLAN]    * realise / 100;
     raw[STRAT_SQUARE_VALUE] = raw[STRAT_SQUARE_VALUE] * realise / 100;
 
     *phase_out = phase;
@@ -830,7 +819,6 @@ static float weight_mean(const Board *bd, const StrategyWeights *w, int phase,
     act[STRAT_PIECE_ACTIVITY]      = 1.0f;
     act[STRAT_DEFENDER_LOGISTICS]  = 1.0f;
     act[STRAT_COORDINATION]        = 1.0f;
-    act[STRAT_GAME_PLAN]           = 1.0f;
     act[STRAT_SQUARE_VALUE]        = 1.0f;
     act[STRAT_BLOCKADE]            = 1.0f;
     act[STRAT_RESTRICTION]         = 1.0f;

@@ -23,7 +23,7 @@ import chess.engine
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ab_match
 
-N_STRATS = 16
+N_STRATS = 15
 
 
 def make_side(path):

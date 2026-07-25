@@ -20,7 +20,7 @@ STRATEGIES = [
     "DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
     "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE", "DEFENDER_LOGISTICS",
     "KING_ACTIVITY", "PAWN_PROMOTION", "OPPOSITION",
-    "MATERIAL", "COORDINATION", "GAME_PLAN", "SQUARE_VALUE",
+    "MATERIAL", "COORDINATION", "SQUARE_VALUE",
     "BLOCKADE", "RESTRICTION"
 ]
 
@@ -64,7 +64,7 @@ def trace_strategies(pgn_file, engine_path):
         # Determine which strategies are "active" in this position.
         # Every strategy now has an implementation, so each phase tunes
         # its full set instead of leaving weights frozen at 1.0.
-        active = ["MATERIAL", "COORDINATION", "GAME_PLAN", "SQUARE_VALUE", "BLOCKADE", "RESTRICTION"]  # Always active
+        active = ["MATERIAL", "COORDINATION", "SQUARE_VALUE", "BLOCKADE", "RESTRICTION"]  # Always active
         if phase == "opening":
             active.extend(["DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING"])
         elif phase == "middlegame":
@@ -85,18 +85,36 @@ def trace_strategies(pgn_file, engine_path):
 
     return strategy_log
 
+# Slot order from when weight files were keyed by integer index, kept so older
+# files still load correctly. A name here that is no longer in STRATEGIES is a
+# retired strategy and is dropped — which is the whole point of keying by name:
+# without this table, removing GAME_PLAN (slot 12) would shift every later
+# weight onto the wrong strategy.
+LEGACY_SLOTS = [
+    "DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
+    "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE", "DEFENDER_LOGISTICS",
+    "KING_ACTIVITY", "PAWN_PROMOTION", "OPPOSITION",
+    "MATERIAL", "COORDINATION", "GAME_PLAN", "SQUARE_VALUE",
+    "BLOCKADE", "RESTRICTION", "TRANSIT",
+]
+
+
 def load_weights(path):
-    """Load current strategy weights."""
+    """Load current strategy weights, by name or by legacy integer index."""
     weights = {}
     try:
         with open(path) as f:
             for line in f:
                 parts = line.strip().split()
-                if len(parts) >= 3 and parts[0] == "weight":
-                    idx = int(parts[1])
-                    w = float(parts[2])
-                    if idx < len(STRATEGIES):
-                        weights[STRATEGIES[idx]] = w
+                if len(parts) < 3 or parts[0] != "weight":
+                    continue
+                key, w = parts[1], float(parts[2])
+                if key not in STRATEGIES:
+                    if not key.isdigit() or int(key) >= len(LEGACY_SLOTS):
+                        continue
+                    key = LEGACY_SLOTS[int(key)]
+                if key in STRATEGIES:
+                    weights[key] = w
     except FileNotFoundError:
         pass
 
@@ -108,19 +126,23 @@ def load_weights(path):
     return weights
 
 def save_weights(path, weights):
-    """Save adjusted strategy weights."""
+    """Save adjusted strategy weights, keyed by NAME.
+
+    Keying by position meant deleting a strategy from the middle of the enum
+    silently shifted every later weight onto the wrong strategy. Names survive
+    enum edits; the engine still reads the old integer form through a legacy
+    slot table (eval_strategy.c) so existing files keep working."""
     with open(path, "w") as f:
-        for idx, strat in enumerate(STRATEGIES):
-            w = weights.get(strat, 1.0)
-            f.write(f"weight {idx} {w}\n")
+        for strat in STRATEGIES:
+            f.write(f"weight {strat} {weights.get(strat, 1.0)}\n")
 
 def live_strategies(engine_path):
     """Names the engine still scores. A strategy whose machinery is switched
-    off (e.g. GAME_PLAN once the plan knobs are zeroed) reports an effective
-    weight of 0 and is excluded from the engine's budget entirely — nudging its
-    weight afterwards just makes a dead number drift upward forever, since it
-    counts as 'active' on every move. Returns None if the probe fails, meaning
-    "treat everything as live" (safe default)."""
+    off reports an effective weight of 0 and is excluded from the engine's
+    budget entirely — nudging its weight afterwards just makes a dead number
+    drift upward forever, since it counts as 'active' on every move. (GAME_PLAN
+    was the case that motivated this; it has since been removed outright.)
+    Returns None if the probe fails, meaning "treat everything as live"."""
     import subprocess
     try:
         p = subprocess.run([engine_path, "evalfens"],

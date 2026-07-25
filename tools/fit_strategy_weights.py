@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 STRATS = ["DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
           "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE",
           "DEFENDER_LOGISTICS", "KING_ACTIVITY", "PAWN_PROMOTION",
-          "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN", "SQUARE_VALUE",
+          "OPPOSITION", "MATERIAL", "COORDINATION", "SQUARE_VALUE",
           "BLOCKADE", "RESTRICTION"]
 N = len(STRATS)
 
@@ -202,8 +202,8 @@ def main():
     if apply:
         path = os.path.join(ROOT, "strategy_weights.txt")
         with open(path, "w") as f:
-            for i, v in enumerate(w):
-                f.write(f"weight {i} {v}\n")
+            for name, v in zip(STRATS, w):
+                f.write(f"weight {name} {v}\n")
         print(f"applied -> {path}")
         try:
             from analyze_game import upload_weights_to_supabase

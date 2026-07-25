@@ -194,7 +194,7 @@ def play_game(white, black, movetime, max_plies=1000, live_cb=None):
 STRAT_ORDER = ["DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
                "PIECE_ACTIVITY", "ATTACK_POTENTIAL", "PAWN_STRUCTURE",
                "DEFENDER_LOGISTICS", "KING_ACTIVITY", "PAWN_PROMOTION",
-               "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN",
+               "OPPOSITION", "MATERIAL", "COORDINATION",
                "SQUARE_VALUE", "BLOCKADE", "RESTRICTION"]
 
 
@@ -428,12 +428,19 @@ def main():
                 one = os.path.join(root, "tmp_learn_game.pgn")
                 with open(one, "w") as f:
                     print(game, file=f)
-                subprocess.run(["python3", os.path.join(root, "tools", "analyze_game.py"),
-                                one, args.engine,
-                                os.path.join(root, "strategy_weights.txt"),
-                                str(oc), "0.5"],
-                               cwd=root, check=False)
-                print(f"  learned from game {g+1} (outcome {oc})")
+                rc = subprocess.run(["python3", os.path.join(root, "tools", "analyze_game.py"),
+                                     one, args.engine,
+                                     os.path.join(root, "strategy_weights.txt"),
+                                     str(oc), "0.5"],
+                                    cwd=root, check=False).returncode
+                # Say what actually happened. This used to print "learned" no
+                # matter what, so a crashing learner looked like a working one
+                # for a whole run.
+                if rc == 0:
+                    print(f"  learned from game {g+1} (outcome {oc})")
+                else:
+                    print(f"  !! LEARNING FAILED on game {g+1} "
+                          f"(analyze_game.py exit {rc}) — weights NOT updated")
                 sys.stdout.flush()
     finally:
         if pgn_out:

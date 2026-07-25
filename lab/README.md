@@ -204,6 +204,48 @@ sample as a strength *measurement*; they are not worth `--learn` games.
 Same shape as the endgame result: an outcome-based learner only learns from
 outcomes that could have gone either way.
 
+## The online nudge is degenerate: 5 degrees of freedom, not 16
+
+A 40-game `--learn` run started from the SPSA vector and ended here:
+
+| group | strategies | final weight |
+|---|---|---|
+| always-active | BLOCKADE, COORDINATION, MATERIAL, RESTRICTION, SQUARE_VALUE | 0.8237–0.8241 |
+| opening | CENTER_CONTROL, DEVELOPMENT, KING_SAFETY_OPENING | 1.0776–1.0780 |
+| middlegame | ATTACK_POTENTIAL, PAWN_STRUCTURE, PIECE_ACTIVITY | 1.1030–1.1044 |
+| endgame | KING_ACTIVITY, OPPOSITION, PAWN_PROMOTION | 1.1151–1.1154 |
+| pawn moves | DEFENDER_LOGISTICS | 1.1275 |
+
+Sixteen strategies, five distinct values, identical to 3 decimals inside each
+group — and the groups are exactly the hardcoded phase lists in
+`analyze_game.py`. Supabase's canonical vector had the same signature
+independently. Two defects in `adjust_weights`:
+
+1. **Rank-1 update.** Credit is `surprise * (shares[s] - mean_share)`, and
+   `shares` comes from a phase-membership table, not from anything the strategy
+   scored. The direction is therefore near-constant and the only per-game
+   information is one scalar. One scalar cannot separate 16 strategies.
+2. **MEANREV erases the prior.** `lw = 0.85*lw + credit` has a **half-life of
+   4.27 games**; 0.15% of the starting vector survived 40 games.
+
+The fixed point rewards *firing frequency*, which is anti-correlated with the
+ablation ground truth above: SQUARE_VALUE (+103) and RESTRICTION (+66) were
+driven to the bottom cluster while KING_ACTIVITY + OPPOSITION (measured
+**exactly 0.0**, LOS 50%) were promoted to the top.
+
+Scores over that run were 16/40 = 40% against a ~40.4% corpus baseline for the
+same skill mix — no signal either way, because the weights moved throughout.
+That is the point: **a moving brain cannot be measured.**
+
+This also resolves a loose end. The "+86 Elo learned vs uniform" result measured
+the *batch fit*, never this nudge in isolation — the nudge has been undoing it.
+
+Third lesson for the log, alongside "deletion beat every addition" and
+"outcome-based learning is blind to rare-firing features":
+**check the rank of your update rule.** A learning rule that cannot express the
+target configuration will look like it is learning — weights move every game —
+while being structurally incapable of finding the answer.
+
 ## Deferred (next)
 
 - Learning-rule benchmarks on synthetic tasks with known optima (the

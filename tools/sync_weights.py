@@ -16,7 +16,7 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
-from match import load_supabase_env
+from match import load_supabase_env, STRAT_ORDER as STRATS
 
 
 def get(base, key, q):
@@ -36,12 +36,19 @@ def main():
         return
 
     # Strategy weights -> strategy_weights.txt (already the file's exact format)
+    # Keyed by name: strategy_idx means different things either side of an enum
+    # edit, so a row's name is the only stable identity. Rows for strategies the
+    # engine no longer has (GAME_PLAN, TRANSIT) are skipped rather than written
+    # out where they would land on a live strategy's slot.
     rows = get(base, key,
-               "strategy_weights_current?select=strategy_idx,weight&order=strategy_idx.asc")
+               "strategy_weights_current?select=strategy_idx,strategy_name,weight"
+               "&order=strategy_idx.asc")
+    live = set(STRATS)
+    rows = [r for r in rows or [] if r.get("strategy_name") in live]
     if rows:
         with open(os.path.join(ROOT, "strategy_weights.txt"), "w") as f:
             for r in rows:
-                f.write(f"weight {r['strategy_idx']} {r['weight']}\n")
+                f.write(f"weight {r['strategy_name']} {r['weight']}\n")
         print(f"synced {len(rows)} strategy weights")
 
     # Full registry -> learned_values.txt (verbatim raw dump)
