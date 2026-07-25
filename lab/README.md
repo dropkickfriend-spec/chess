@@ -122,7 +122,7 @@ validation easy to fool yourself with.
   Texel tune in turn and measure how strength develops.
 - coord / blockade / pawn_struct are parked at the sample-size wall (see above),
   not forgotten -- revisit only with a much larger opening set or faster games.
-- `training_loop.py` is misdesigned: its "self-play cycle" plays 2 games vs
-  Stockfish skill 20, loses 0/2 every time by construction, and appends those
-  blowouts to the permanent training corpus. Either rewrite it as true self-play
-  or point it at a matched skill (4-6) where games are informative.
+- Re-run SPSA from the SPSA weights (it had not plateaued) and on each machine's
+  own learned_values.txt, since value tables and strategy weights interact.
+- Feed the ablation ground truth into the fit: we know pst is +103 and the plan
+  machinery was -137, yet the proxy fit cannot see either.
