@@ -112,9 +112,17 @@ def side_dir(w):
 
 
 def play(wdir, bdir, values, opening, depth, max_plies=200):
-    board = chess.Board()
-    for mv in opening.split():
-        board.push_uci(mv)
+    # A "start" is either a UCI move sequence from the initial position, or a
+    # raw FEN. FEN starts let SPSA tune directly on the phase that is actually
+    # losing games: blunder mining says 74% of decisive swings happen after ply
+    # 60, and playing from those positions is both more relevant and far faster
+    # than replaying a full game to reach them.
+    if "/" in opening:
+        board = chess.Board(opening)
+    else:
+        board = chess.Board()
+        for mv in opening.split():
+            board.push_uci(mv)
     env = dict(os.environ)
     env["CHESS_WEIGHTS"] = os.path.abspath(values)
     env.pop("CHESS_BOOK", None)
@@ -155,10 +163,26 @@ def main():
     ap.add_argument("-a", type=float, default=0.30, help="step size")
     ap.add_argument("--validate-every", type=int, default=10)
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--positions", default=None,
+                    help="file of start positions (FEN or 'FEN;score' lines) to "
+                         "tune on instead of book openings — e.g. data/blunders_big.txt "
+                         "to tune on the phase that actually loses games")
     args = ap.parse_args()
 
     rng = random.Random(args.seed)
-    allops = ab_match.load_openings(0)
+    if args.positions:
+        allops = []
+        with open(args.positions) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    allops.append(line.split(";")[0])
+        # Skip positions already decided: if one side is getting mated no
+        # weight change can flip the result, so they contribute no gradient.
+        allops = [p for p in allops if p]
+        print(f"tuning on {len(allops)} start positions from {args.positions}")
+    else:
+        allops = ab_match.load_openings(0)
     live = live_strategies(args.values)
     dead = [NAMES[i] for i in range(N) if not live[i]]
     if dead:
