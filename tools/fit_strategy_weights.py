@@ -74,7 +74,23 @@ def mse(w, k, X, y):
     return err / len(X)
 
 
-def fit(X, y, iters=600, lr=0.4):
+def load_current(path):
+    """Current strategy weights — the fit's starting point and its prior."""
+    w = [1.0] * N
+    try:
+        with open(path) as f:
+            for line in f:
+                p = line.split()
+                if len(p) == 3 and p[0] == "weight":
+                    i = int(p[1])
+                    if 0 <= i < N:
+                        w[i] = float(p[2])
+    except FileNotFoundError:
+        pass
+    return w
+
+
+def fit(X, y, prior, iters=600, lr=0.4):
     # Standardise features so one learning rate serves every strategy
     # (MATERIAL raw spans thousands of cp, OPPOSITION a few dozen).
     std = []
@@ -85,9 +101,14 @@ def fit(X, y, iters=600, lr=0.4):
         std.append(math.sqrt(var) if var > 1e-9 else 1.0)
     Xs = [[x[j] / std[j] for j in range(N)] for x in X]
 
-    # Start from the current uniform calibration (real weight 1.0 each;
-    # in standardised space that is w'_j = std_j), then fit K on it.
-    w = [std[j] for j in range(N)]
+    # WARM START from the weights the engine is actually playing with, not from
+    # uniform. Restarting at uniform every retune threw away everything the
+    # per-game nudge had learned -- and that learning is worth real strength:
+    # the nudged vector measured +86 Elo (LOS 100%, 128 games) against uniform,
+    # while this fit's output sits at ~1.0 either way. Resetting was quietly
+    # deleting an +86 Elo brain every 10 games, which is what made learning look
+    # too slow. In standardised space a real weight r_j is w'_j = r_j * std_j.
+    w = [prior[j] * std[j] for j in range(N)]
 
     best_k, best_e = 0.5, None
     for ki in range(31):
@@ -98,13 +119,13 @@ def fit(X, y, iters=600, lr=0.4):
     print(f"K = {best_k:.2f}, start E = {best_e:.6f} ({len(Xs)} positions)")
 
     c = math.log(10.0) * best_k / 400.0
-    # Ridge regularisation toward the uniform prior (real weight 1.0 each).
+    # Ridge regularisation toward the PRIOR (the weights currently in play).
     # Without it, the logistic fit on a small, collinear sample zeroes most
     # strategies and hands all the weight to one or two — the observed collapse
     # where 9 of 16 strategies sat at the 0.05 floor and RESTRICTION ran to 6.4,
     # effectively disabling half the eval. FIT_REG shrinks each weight back
-    # toward 1.0 unless the data strongly argues otherwise (same principle as
-    # tune.c's L2-toward-priors that stopped the piece-value runaway).
+    # toward the prior unless the data strongly argues otherwise (same principle
+    # as tune.c's L2-toward-priors that stopped the piece-value runaway).
     REG = float(os.getenv("FIT_REG", "0.15"))
     g2 = [1e-8] * N                       # Adagrad accumulators
     for it in range(iters):
@@ -117,8 +138,10 @@ def fit(X, y, iters=600, lr=0.4):
                 grad[j] += common * x[j]
         for j in range(N):
             g = grad[j] / len(Xs)
-            # pull the *real* weight (w[j]/std[j]) back toward 1.0
-            g += 2.0 * REG * (w[j] / std[j] - 1.0) / std[j]
+            # pull the *real* weight back toward the PRIOR (what the engine is
+            # playing with), not toward 1.0 — so the fit refines the current
+            # brain where the data is convincing instead of flattening it.
+            g += 2.0 * REG * (w[j] / std[j] - prior[j]) / std[j]
             g2[j] += g * g
             w[j] -= lr * g / math.sqrt(g2[j])
         if (it + 1) % 200 == 0:
@@ -142,7 +165,9 @@ def main():
     if len(X) != len(results):
         sys.exit(f"feature rows {len(X)} != results {len(results)}")
 
-    w, k, err = fit(X, results)
+    prior = load_current(os.path.join(ROOT, "strategy_weights.txt"))
+    print("warm start from: " + " ".join(f"{v:.2f}" for v in prior))
+    w, k, err = fit(X, results, prior)
 
     # Only ratios matter to the engine's relative reweighting: floor
     # negatives (a harmful signal is silenced, not inverted) and scale
