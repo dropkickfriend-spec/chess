@@ -74,6 +74,10 @@ reproduces it. "±" is the Elo standard error; LOS = likelihood of superiority.
 | learned strategy weights vs uniform | **+86 Elo**, LOS 100% (128 games) | the per-game nudge genuinely works |
 | weight fit restarting from uniform | erased that +86 Elo every retune | **fixed** — fit now warm-starts from current weights |
 | SPSA-tuned weights vs learned start | **+72 Elo**, LOS 99.9% (128 games, depth 6) | **adopt** — `data/strategy_weights_spsa.txt` |
+| endgame piece values (eg_material) | +344, LOS 100% | control: harness detects large effects |
+| endgame PSTs (eg_pst) | **+52 ± 25**, LOS 98% | keeper |
+| passed-pawn bonus (eg_passed) | **-11 ± 25**, LOS 34% | **earns nothing — investigate** |
+| weights fitted on blunder positions | within 1-5% of the SPSA vector | dead end: 492 positions cannot beat the prior |
 
 **The sample-size wall.** coord / blockade / pawn_struct are all sub-25-Elo
 effects measured against +/-24 error bars, and going from 80 to 128 games moved
@@ -112,6 +116,26 @@ trained on scored 67.5% at depth 4 and 77.5% at depth 5, so it is not overfittin
 the training openings. **Always validate on held-out openings AND a different
 depth**: the deterministic engine plus a fixed opening set makes in-sample
 validation easy to fool yourself with.
+
+## `blunder_mine.py` — where games are actually lost
+
+Result-only learning gives one bit per game and never says which move was the
+mistake, so the tuner labels every position in a lost game "loss" including the
+ones where the engine was fine. But each game already stores a per-ply eval
+trace, so the collapse is already in the data: scan for the largest drop across
+one of OUR moves (evals are White-POV, so a Black blunder is an increase; skip
+drops on the opponent's move and swings from already-lost positions).
+
+**Headline finding: 74% of large decisive swings happen after ply 60** (95 of
+129 at a 150 cp threshold; 54% at 80 cp, so the bigger the blunder the more
+endgame-concentrated it is). The engine is not losing in the opening.
+
+Pair that with the endgame ablation above and a specific diagnosis falls out:
+we lose in the endgame, and our **passed-pawn bonus measures as worth nothing**
+— the central endgame concept contributing no measurable strength.
+
+Useful as a DIAGNOSTIC, not as training data: fitting weights on the mined
+positions moved them 1-5% from the prior, so there was nothing to A/B.
 
 ## Deferred (next)
 
