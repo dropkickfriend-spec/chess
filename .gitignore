@@ -10,3 +10,4 @@ data/games_log.pgn
 data/ladder.json
 data/bleed_history.csv
 data/texel_dataset.txt
+data/blunders.txt
