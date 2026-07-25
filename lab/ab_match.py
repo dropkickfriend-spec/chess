@@ -97,6 +97,11 @@ PRESETS = {
     "coord":      [("coord_w", None)],
     "restriction":[("action_w", 1)],
     "blockade":   [("action_w", 0)],
+    # Endgame knowledge — blunder mining says 74% of big decisive swings happen
+    # after ply 60, so these are the terms most worth measuring.
+    "eg_pst":     [("pawn_eg", None), ("king_eg", None)],   # endgame PSTs
+    "eg_passed":  [("passed_eg+1", None)],                  # passed-pawn bonus
+    "eg_material":[("material_eg", None)],                  # endgame piece values
     # plan sub-parts, for drilling into the plan machinery's -137 Elo:
     "game_plan":  [("PLAN_PART", 0), ("PLAN_IDLE", 0)],   # GAME_PLAN piece pricing
     "plan_engage":[("PLAN_ENGAGE", 0)],                   # weight-budget plan gain
@@ -104,10 +109,11 @@ PRESETS = {
     "logi_plan":  [("LOGI_PLAN", 0)],                     # plan-relative logistics
     "line_clear": [("LINE_KING", 0), ("LINE_HEAVY", 0)],  # line-clearance
 }
-BLOCK_COUNTS = {"coord_w": 5,
+BLOCK_COUNTS = {"coord_w": 5, "pawn_eg": 64, "king_eg": 64,
+                "passed_eg+1": 6, "material_eg": 5,
                 "pst_mg[0]": 64, "pst_mg[1]": 64, "pst_mg[2]": 64,
                 "pst_mg[3]": 64, "pst_mg[4]": 64, "pst_mg[5]": 64,
-                "pawn_eg": 64, "king_eg": 64}
+                }
 
 
 def override_lines(spec):
