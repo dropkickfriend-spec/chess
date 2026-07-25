@@ -205,7 +205,22 @@
                 <thead><tr><th>SF skill</th><th>W</th><th>D</th><th>L</th><th>Score</th><th>Games</th></tr></thead>
                 <tbody></tbody>
             </table></div>
-            <div style="color:#00d4ff;font-size:0.9em;margin:14px 0 2px">Improvement over time — rolling score % per skill level</div>
+            <div style="color:#00d4ff;font-size:1.05em;margin:18px 0 2px">
+                <b>Is it actually learning?</b> — estimated strength over time
+            </div>
+            <div id="learnVerdict" style="font-size:0.9em;margin:2px 0 6px;color:#b0b0b0">
+                measuring…
+            </div>
+            <canvas id="eloChart" width="1100" height="240" style="width:100%"></canvas>
+            <div style="color:#777;font-size:0.78em;margin:4px 0 0">
+                Each point is a block of games: performance rating = average opponent
+                strength + margin from the score. Opponent strength uses the standard
+                Stockfish skill-level approximation (~1350 at skill 0, ~+75/level), so
+                the absolute number is rough — the <b>trend</b> is the signal. Shaded
+                band is ±1 standard error; if it straddles the previous point, that
+                move is noise, not learning.
+            </div>
+            <div style="color:#00d4ff;font-size:0.9em;margin:16px 0 2px">Rolling score % per skill level</div>
             <div class="legend" id="levelLegend"></div>
             <canvas id="levelChart" width="1100" height="220" style="width:100%"></canvas>
         </div>
@@ -495,6 +510,107 @@
                     `<td>${pct}%</td><td>${n}</td></tr>`;
             }).join('');
             drawLevelChart(rows, keys);
+            drawEloChart(rows);
+        }
+
+        // Approximate Elo of Stockfish at each Skill Level (the widely used
+        // ~1350 at skill 0, ~+75 per level). Absolute values are rough; what
+        // matters is that the scale is FIXED, so the trend over time is real.
+        const sfElo = s => 1350 + 75 * (s == null ? 20 : +s);
+
+        // "Is it actually learning?" — one line: performance rating per block of
+        // games, oldest to newest. Score alone can't answer this because the
+        // opponent changes as the ladder climbs (beating skill 2 then losing to
+        // skill 8 looks like regression while actually being progress).
+        // Performance rating normalises for opponent strength:
+        //     rating = avg opponent Elo + 400*log10(S/(1-S))
+        // so a rising line means genuinely stronger play, not easier opponents.
+        function drawEloChart(rows) {
+            const canvas = document.getElementById('eloChart');
+            const verdict = document.getElementById('learnVerdict');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const W = canvas.width, H = canvas.height, pad = 44;
+            ctx.clearRect(0, 0, W, H);
+
+            const games = rows.slice().reverse().map(r => ({   // oldest first
+                opp: sfElo(r.sf_skill),
+                s: r.result === '1/2-1/2' ? 0.5
+                   : ((r.result === '1-0') === (r.our_color === 'white')) ? 1 : 0
+            }));
+            const BLOCK = Math.max(20, Math.ceil(games.length / 30));
+            const pts = [];
+            for (let i = 0; i + BLOCK <= games.length; i += BLOCK) {
+                const b = games.slice(i, i + BLOCK);
+                const n = b.length;
+                const score = b.reduce((a, g) => a + g.s, 0) / n;
+                const opp = b.reduce((a, g) => a + g.opp, 0) / n;
+                // clamp so a clean sweep doesn't produce an infinite margin
+                const cl = Math.min(Math.max(score, 0.5 / n), 1 - 0.5 / n);
+                const rating = opp + 400 * Math.log10(cl / (1 - cl));
+                const varc = b.reduce((a, g) => a + (g.s - score) ** 2, 0) / n;
+                const se = Math.sqrt(varc / n);
+                // convert score error to rating error (derivative of the logit)
+                const dEdS = 400 / (Math.log(10) * cl * (1 - cl));
+                pts.push({ rating, err: Math.min(se * dEdS, 400), n, end: i + n });
+            }
+            if (pts.length < 2) {
+                verdict.textContent = 'not enough games yet — need at least two blocks';
+                return;
+            }
+
+            const lo = Math.min(...pts.map(p => p.rating - p.err)) - 40;
+            const hi = Math.max(...pts.map(p => p.rating + p.err)) + 40;
+            const x = i => pad + i * (W - 2 * pad) / (pts.length - 1);
+            const y = v => H - pad - (v - lo) / Math.max(hi - lo, 1) * (H - 2 * pad);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.setLineDash([4, 4]);
+            ctx.fillStyle = '#b0b0b0'; ctx.font = '11px sans-serif';
+            for (let g = 0; g <= 4; g++) {
+                const v = lo + (hi - lo) * g / 4, yy = y(v);
+                ctx.beginPath(); ctx.moveTo(pad, yy); ctx.lineTo(W - pad, yy); ctx.stroke();
+                ctx.fillText(Math.round(v), 4, yy + 4);
+            }
+            ctx.setLineDash([]);
+
+            // ±1 SE band
+            ctx.fillStyle = 'rgba(0,212,255,0.15)';
+            ctx.beginPath();
+            pts.forEach((p, i) => i ? ctx.lineTo(x(i), y(p.rating + p.err))
+                                    : ctx.moveTo(x(i), y(p.rating + p.err)));
+            for (let i = pts.length - 1; i >= 0; i--)
+                ctx.lineTo(x(i), y(pts[i].rating - pts[i].err));
+            ctx.closePath(); ctx.fill();
+
+            ctx.strokeStyle = '#00d4ff'; ctx.lineWidth = 2.5; ctx.beginPath();
+            pts.forEach((p, i) => i ? ctx.lineTo(x(i), y(p.rating))
+                                    : ctx.moveTo(x(i), y(p.rating)));
+            ctx.stroke();
+            ctx.fillStyle = '#00d4ff';
+            pts.forEach((p, i) => {
+                ctx.beginPath(); ctx.arc(x(i), y(p.rating), 3, 0, 7); ctx.fill();
+            });
+            ctx.fillStyle = '#b0b0b0';
+            ctx.fillText(`oldest (${BLOCK}/block)`, pad, H - 12);
+            ctx.fillText('newest', W - pad - 40, H - 12);
+
+            // Verdict: compare the first and last third, and say plainly whether
+            // the gap clears the noise rather than letting a wiggle look like a win.
+            const k = Math.max(1, Math.floor(pts.length / 3));
+            const avg = a => a.reduce((s, p) => s + p.rating, 0) / a.length;
+            const first = avg(pts.slice(0, k)), last = avg(pts.slice(-k));
+            const noise = Math.max(...pts.map(p => p.err));
+            const d = last - first;
+            const sign = d >= 0 ? '+' : '';
+            verdict.innerHTML = Math.abs(d) < noise
+                ? `<span style="color:#F7DC6F">No clear trend yet</span> — `
+                  + `${sign}${d.toFixed(0)} Elo from first third to last, inside the `
+                  + `±${noise.toFixed(0)} noise. Needs more games at the same levels.`
+                : d > 0
+                ? `<span style="color:#52C9A3">Improving</span> — `
+                  + `${sign}${d.toFixed(0)} Elo from first third to last (noise ±${noise.toFixed(0)}).`
+                : `<span style="color:#FF6B6B">Getting weaker</span> — `
+                  + `${d.toFixed(0)} Elo from first third to last (noise ±${noise.toFixed(0)}).`;
         }
 
         // One line per skill level: rolling score % (win=1, draw=.5) over that
