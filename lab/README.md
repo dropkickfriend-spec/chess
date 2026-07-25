@@ -181,6 +181,29 @@ endgame-aware pruning), or exact knowledge like tablebases.
 This is worth more than a tuned vector would have been: it says where NOT to
 spend effort.
 
+## Which opponents are worth playing (the informative band)
+
+The same zero-gradient argument applies to opponent strength, and it changes how
+the ladder should be run. Score by Stockfish skill over the 966-game corpus:
+
+| skill | 0–4 | 5 | 6 | 7 | 8 | 9–13 | 14–16 | 20 |
+|---|---|---|---|---|---|---|---|---|
+| games | 498 | 50 | 112 | 37 | 35 | 150 | 30 | 48 |
+| score | 99→74% | **53.0%** | **43.3%** | **36.5%** | **28.6%** | 8–25% | 5–15% | 3.1% |
+
+A game we lose regardless of the weight vector carries the same information as an
+SPSA iteration with zero gradient: none, at full cost. At skill 12+ we score
+8–15%, so nearly every game is decided by tactics the search never saw, not by
+how the eval is priced. Symmetrically, skills 0–2 (87–99%) are won regardless.
+
+**The learning signal lives where the score is near 50% — skills 5–8 here.**
+228 of our games sit at skill 9+, which is where the ladder's compute has been
+going and where it has been buying the least. Rungs are still worth a small fixed
+sample as a strength *measurement*; they are not worth `--learn` games.
+
+Same shape as the endgame result: an outcome-based learner only learns from
+outcomes that could have gone either way.
+
 ## Deferred (next)
 
 - Learning-rule benchmarks on synthetic tasks with known optima (the
