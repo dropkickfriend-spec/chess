@@ -58,30 +58,28 @@ from blunder_mine import find_blunder
 # Reuse the match runner's upload path rather than writing a second one: it
 # already opens the match row up front and writes each game as it finishes, so
 # an interrupted run keeps its completed games.
-from match import (open_match, upload_game, close_match, supabase_insert,
-                   _supabase_creds)
+from match import (open_match, upload_game, close_match, durable_insert,
+                   drain_pending, queued_count, _supabase_creds)
 
 
 def log_round(run_id, rnd, args, n, cycle, heldout, wins, losses, tps):
-    """One row per round. Never let a logging failure kill a long run."""
+    """One row per round. Retries and spools on failure rather than dropping —
+    a dropped round row is exactly what lost round 1 of run 0f5cea082b30."""
+    base_url, key = _supabase_creds()
+    if not base_url or not key:
+        return
     try:
-        base_url, key = _supabase_creds()
-        if not base_url or not key:
-            return
-        try:
-            sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
-                                 capture_output=True, text=True).stdout.strip() or None
-        except OSError:
-            sha = None
-        supabase_insert(base_url.rstrip("/"), key, "lossloop_rounds", [{
-            "run_id": run_id, "round": rnd, "sf_skill": args.skill,
-            "movetime_ms": int(args.movetime * 1000), "games": n,
-            "cycle_score": cycle, "heldout_score": heldout,
-            "wins": wins, "losses": losses, "turning_points": tps,
-            "spsa_iters": args.spsa_iters, "engine_sha": sha,
-        }])
-    except Exception as e:
-        print(f"  (round log failed: {e})", file=sys.stderr)
+        sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True).stdout.strip() or None
+    except OSError:
+        sha = None
+    durable_insert(base_url.rstrip("/"), key, "lossloop_rounds", [{
+        "run_id": run_id, "round": rnd, "sf_skill": args.skill,
+        "movetime_ms": int(args.movetime * 1000), "games": n,
+        "cycle_score": cycle, "heldout_score": heldout,
+        "wins": wins, "losses": losses, "turning_points": tps,
+        "spsa_iters": args.spsa_iters, "engine_sha": sha,
+    }])
 
 
 def stockfish_path():
@@ -315,6 +313,10 @@ def main():
     # Keep the round that was best on HELD-OUT, not the one best on the cycle —
     # the cycle score is what we tuned against and is not evidence.
     S.write_weights(best[1], out)
+    if queued_count():
+        print(f"\n!! {queued_count()} row(s) could not be uploaded and are "
+              f"queued in data/pending_uploads.jsonl — they go up on the next "
+              f"run with a working connection")
     print(f"\nbest held-out was round {best[2]} ({100*best[0]/(2*n_ops):.0f}%)"
           f" -> {out}")
     print("This is NOT adopted. Gate it first:")

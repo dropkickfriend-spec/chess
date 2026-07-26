@@ -21,6 +21,8 @@ TMP_DIR = tempfile.gettempdir()
 import shutil
 import subprocess
 import sys
+import time
+import urllib.error
 import urllib.request
 
 import chess
@@ -56,6 +58,95 @@ def supabase_insert(base_url, key, table, rows, return_repr=False, upsert=False)
     with urllib.request.urlopen(req) as resp:
         body = resp.read()
     return json.loads(body) if return_repr else None
+
+
+# Rows that could not be sent, spooled to disk so a flaky link delays data
+# rather than destroying it. A run on a phone lost a whole round summary and
+# three game rows to brief dropouts, silently.
+PENDING_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "..", "data", "pending_uploads.jsonl")
+_queued = 0
+
+
+def _spool(table, rows, reason):
+    global _queued
+    try:
+        os.makedirs(os.path.dirname(PENDING_PATH), exist_ok=True)
+        with open(PENDING_PATH, "a") as f:
+            for r in rows:
+                f.write(json.dumps({"table": table, "row": r}) + "\n")
+        _queued += len(rows)
+        print(f"  ({len(rows)} row(s) queued for retry: {reason})", file=sys.stderr)
+    except OSError as e:
+        print(f"  (could not queue rows: {e})", file=sys.stderr)
+
+
+def queued_count():
+    return _queued
+
+
+def durable_insert(base_url, key, table, rows, upsert=False, tries=3):
+    """Insert with backoff; spool to disk if it still fails.
+
+    A 4xx is deliberately NOT retried or spooled. A malformed row will never
+    succeed, so queueing it would fill the spool with garbage that retries
+    forever and hides real outages — that is how the earlier `outcome` type
+    mismatch would have looked like a network problem instead of a bug.
+    """
+    delay = 2
+    for attempt in range(1, tries + 1):
+        try:
+            supabase_insert(base_url, key, table, rows, upsert=upsert)
+            return True
+        except urllib.error.HTTPError as e:
+            if 400 <= e.code < 500:
+                print(f"  (upload rejected, not retrying: HTTP {e.code} "
+                      f"{e.reason})", file=sys.stderr)
+                return False
+            if attempt == tries:
+                _spool(table, rows, f"HTTP {e.code}")
+                return False
+        except Exception as e:
+            if attempt == tries:
+                _spool(table, rows, type(e).__name__)
+                return False
+        time.sleep(delay)
+        delay *= 2
+    return False
+
+
+def drain_pending(base_url, key):
+    """Re-send anything spooled by an earlier run. Rows that fail again are
+    written back, so nothing is lost by attempting a drain."""
+    if not os.path.exists(PENDING_PATH):
+        return 0
+    try:
+        with open(PENDING_PATH) as f:
+            items = [json.loads(l) for l in f if l.strip()]
+    except (OSError, ValueError):
+        return 0
+    if not items:
+        return 0
+    sent, left = 0, []
+    for it in items:
+        try:
+            supabase_insert(base_url, key, it["table"], [it["row"]])
+            sent += 1
+        except Exception:
+            left.append(it)
+    try:
+        if left:
+            with open(PENDING_PATH, "w") as f:
+                for it in left:
+                    f.write(json.dumps(it) + "\n")
+        else:
+            os.remove(PENDING_PATH)
+    except OSError:
+        pass
+    if sent:
+        print(f"drained {sent} queued row(s) from a previous run"
+              + (f"; {len(left)} still pending" if left else ""))
+    return sent
 
 
 def load_supabase_env():
@@ -94,6 +185,9 @@ def open_match(sf_skill, sf_elo, movetime):
         print("upload skipped: set SUPABASE_URL and SUPABASE_KEY "
               "(env or supabase.env)", file=sys.stderr)
         return None
+    # We have a working connection right now, so flush anything a previous run
+    # could not send before adding to the pile.
+    drain_pending(base_url, key)
     try:
         sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
                              capture_output=True, text=True).stdout.strip() or None
@@ -116,18 +210,15 @@ def upload_game(handle, sf_skill, g):
     if not handle:
         return
     base_url, key, match_id = handle
-    try:
-        supabase_insert(base_url, key, "chessbb_games", [{
-            "match_id": match_id,
-            "round": g["round"], "our_color": g["our_color"],
-            "result": g["result"], "outcome": g["outcome"],
-            "moves": g["moves"], "pgn": g["pgn"],
-            "uci": g.get("uci"), "evals": g.get("evals"),
-            "strat_series": g.get("strat_series"),
-            "sf_skill": sf_skill,
-        }])
-    except Exception as e:
-        print(f"  (game upload failed: {e})", file=sys.stderr)
+    durable_insert(base_url, key, "chessbb_games", [{
+        "match_id": match_id,
+        "round": g["round"], "our_color": g["our_color"],
+        "result": g["result"], "outcome": g["outcome"],
+        "moves": g["moves"], "pgn": g["pgn"],
+        "uci": g.get("uci"), "evals": g.get("evals"),
+        "strat_series": g.get("strat_series"),
+        "sf_skill": sf_skill,
+    }])
 
 
 def close_match(handle, wins, draws, losses):

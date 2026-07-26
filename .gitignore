@@ -16,3 +16,4 @@ data/blunders_big.txt
 data/strategy_weights_lossloop.txt
 tmp_*.pgn
 data/lossloop_summary.json
+data/pending_uploads.jsonl
