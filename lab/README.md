@@ -321,6 +321,31 @@ The first attempt at this depth-8 run died at 102/128 games having produced no
 result line while exiting cleanly. Worth a note for anyone polling a long job:
 watch for the *result*, not for process exit.
 
+### First live run of a working learning rule
+
+40 games at skills 5-8 with `--learn`, against a same-session control of 40
+games at the same skills, same movetime, on the old brain with learning off:
+
+| | score |
+|---|---|
+| SPSA brain, no learning | 14.0/40 = **35.0%** |
+| adopted brain + rule v3 | 21.0/40 = **52.5%** |
+
++17.5 points — but that is **1.57 sigma, short of significance**. Forty games
+against a randomised Stockfish is a noisy instrument; the 128-game head-to-head
+A/Bs above are the real evidence, and this run is consistent with them rather
+than independent confirmation of them. Recorded as directional, not proven.
+
+**Rank after live play: 13 levels across 15 strategies.** This is the check that
+matters, and it is the one nobody ran last time: the old rule's collapse was
+invisible for 40 games because only the score was being watched. Live weight
+movement was modest and spread (SQUARE_VALUE +22%, DEVELOPMENT +23%, BLOCKADE
+-16%, PIECE_ACTIVITY -10%) rather than snapping into phase groups.
+
+Worth noting SQUARE_VALUE moved back *up* 22% under live play after the replay
+had pushed it down — the rule correcting its own overshoot, which is what a
+mean-reverting rule with a real credit signal should do.
+
 Worth resolving an apparent contradiction: the new vector moves SQUARE_VALUE
 (ablation +103) and RESTRICTION (+66) **down**, yet plays stronger. There is no
 conflict. Ablation measured *deleting* a term; this measures *re-pricing* one. A
