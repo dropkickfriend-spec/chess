@@ -353,7 +353,7 @@
         async function fetchWeightHistory() {
             // PostgREST caps every response at 1000 rows regardless of the
             // limit we ask for, so a single request only ever returned ~59
-            // full snapshots (1000 / 17 strategies). Page through with offset
+            // full snapshots (1000 / strategies-per-snapshot). Page with offset
             // until a short page comes back, so the whole history is drawn.
             const PAGE = 1000;
             let rows = [], offset = 0;
@@ -1435,9 +1435,10 @@
             ctx.beginPath(); ctx.moveTo(pad, y(0)); ctx.lineTo(W - pad, y(0)); ctx.stroke();
             ctx.setLineDash([]);
 
-            // Only plot as many strategies as the data actually carries —
-            // historic rows streamed 13 values, current ones stream all 17,
-            // so deriving the count from the data avoids phantom flat lines.
+            // Only plot as many strategies as the data actually carries — the
+            // history spans 13-, 16-, 17- and now 15-wide snapshots as
+            // strategies were added and retired, so deriving the count from the
+            // data avoids phantom flat lines.
             const nStrat = Math.min(STRATEGY_NAMES.length,
                 Math.max(...series.map(r => (r ? r.length : 0))));
             for (let s = 0; s < nStrat; s++) {
