@@ -353,6 +353,61 @@ term can be indispensable — zeroing it costs 103 Elo — while still being
 overweighted at 1.14. "Essential" and "overweighted" are compatible, and only
 the second is what a weight vector can fix.
 
+## Per-move piece pricing: one half worked, one half didn't
+
+Certainty pricing was never per-position. `plan_certainty` is computed once per
+iteration **at the root** from PV overlap, so every leaf of a search got the same
+multiplier and it could not tell two positions apart. Reset per search and
+assigned only after an iteration finished, so iteration 1 always ran at the floor
+and later ones used the previous iteration's number; in tooling, with no
+lookahead, it sat at the floor permanently. Two replacements, measured separately:
+
+| change | disabled scores | Elo | LOS | verdict |
+|---|---|---|---|---|
+| hold-your-square discount on SQUARE_VALUE | 49.6% | -2.7 | 45.6% | **neutral — off** |
+| certainty from loose material | 38.7% | **-80.1** | **0.1%** | **+80 Elo — kept** |
+
+So the *diagnosis* was right and one *fix* was right. Replacing a root-global
+scalar with a real per-position quantity is worth ~80 Elo. Discounting square
+values for pieces that cannot hold their square is worth nothing measurable, and
+costs ~6% nps, so it is off by default (`CHESS_SQV=1` to retest — `SQV_LOOSE`
+and `SQV_KICK` were set by hand and never tuned, so it deserves one more look
+after a tune rather than deletion).
+
+That is now **six added heuristics measured neutral against one that worked**,
+and the one that worked was fixing a mechanism that was already there and broken
+— not adding a new idea. Consistent with everything else in this file.
+
+## Where the time actually goes
+
+gprof on a depth-9 search of Kiwipete (`-O2`, then `-fno-inline` for the
+per-strategy split):
+
+| | share of search time |
+|---|---|
+| **whole eval** (`gather_raw`) | **23.5%** |
+| TT probe | 9.2% |
+| make + unmake move | 15.1% |
+| movegen + move ordering | 12.6% |
+| slider attacks | 10.1% |
+| **`__popcountdi2` (software popcount!)** | **5.9%** |
+
+Two things fell out of this:
+
+- Eval is under a quarter of runtime. Making the eval cheaper has a hard ceiling;
+  the search machinery is three quarters of the budget.
+- `COUNT()` was linking **libgcc's software popcount loop** because the build had
+  no `-march`. Every CPU we build on has the instruction. Adding a probed
+  `-march=native` is **4% faster with bit-identical node counts** — free, exact,
+  and it applies on Termux too.
+- Within the eval, `eval_center_control` is the single most expensive strategy
+  (13.2% of the no-inline build) despite being one of the simplest — it does ~18
+  popcounts over a 4-square loop. Worth revisiting now that popcount is cheap.
+
+Combined effect of today's changes on time-to-depth-9 over four probe positions:
+**2577ms -> 1536ms (40% faster)**, nps 235k -> 273k. Most of the node reduction
+is the certainty fix producing more cutoffs, not raw speed.
+
 ## Deferred (next)
 
 - Learning-rule benchmarks on synthetic tasks with known optima (the

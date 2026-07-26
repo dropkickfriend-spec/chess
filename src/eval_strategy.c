@@ -160,7 +160,11 @@ static int eval_restriction(const Board *bd, int phase, const AttackInfo *ai) {
 // built from the combined eval, so this term automatically reshapes the game
 // plan, and gather_raw runs it through the same best-move certainty filter as
 // MATERIAL/GAME_PLAN.
-int sqv_context_on = 1;   // CHESS_NOSQV=1 disables, to A/B this term alone
+// Measured neutral: disabling it scored 49.6% over 128 games (-2.7 Elo, LOS
+// 45.6%), i.e. no detectable strength either way, while costing ~6% nps. Off by
+// default; CHESS_SQV=1 opts back in to retest (e.g. against a retuned
+// SQV_LOOSE/SQV_KICK, which were set by hand and never tuned).
+int sqv_context_on = 0;
 
 static int eval_square_value(const Board *bd, int phase, const AttackInfo *ai) {
     extern int SQV_LOOSE, SQV_KICK;
@@ -711,7 +715,10 @@ extern int PLAN_PART, PLAN_IDLE, PLAN_ENGAGE, CERT_FLOOR, LOGI_PLAN;
 extern int CERT_LOOSE;
 extern int plan_certainty;
 
-int cert_loose_on = 1;   // CHESS_NOCERT=1 falls back to the root-global scalar
+// Measured +80 Elo: disabling it (falling back to the root-global plan_certainty)
+// scored 38.7% over 128 games, LOS 0.1%. On by default; CHESS_NOCERT=1 restores
+// the old root-global behaviour for re-measurement.
+int cert_loose_on = 1;
 
 // GAME_PLAN used to live here: the last completed iteration's PV was treated as
 // "the plan", and every piece was priced by its degree of involvement in it.

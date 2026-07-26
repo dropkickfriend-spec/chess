@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
     // Per-move piece pricing, each half separately ablatable so a neutral
     // result is attributable: square values discounted when the piece cannot
     // hold its square, and certainty derived from loose material.
-    { extern int sqv_context_on; if (getenv("CHESS_NOSQV")) sqv_context_on = 0; }
+    { extern int sqv_context_on; if (getenv("CHESS_SQV")) sqv_context_on = 1; }
     { extern int cert_loose_on;  if (getenv("CHESS_NOCERT")) cert_loose_on = 0; }
 
     if (argc >= 2 && strcmp(argv[1], "perft") == 0) {
