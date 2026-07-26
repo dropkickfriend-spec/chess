@@ -1,3 +1,11 @@
+# Adopted brain. Produced by replaying 400 logged games from the SPSA
+# vector through learning rule v3 (credit by predictive accuracy).
+# Head-to-head vs the SPSA vector, 128 games per depth, both colours:
+#   depth 4  50.4%   +2.7 Elo   LOS  54.5%
+#   depth 5  66.4%  +118.4 Elo  LOS 100.0%
+#   depth 6  59.0%   +63.1 Elo  LOS  99.5%
+#   depth 8  59.0%   +63.1 Elo  LOS  99.6%
+# Keyed by name so enum edits cannot silently reassign weights.
 weight DEVELOPMENT 0.7953
 weight CENTER_CONTROL 0.9232
 weight KING_SAFETY_OPENING 1.0459

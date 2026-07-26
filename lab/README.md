@@ -309,10 +309,17 @@ defect is gone.
 | 4 | 50.4% | +2.7 | 54.5% |
 | **5** | **66.4%** | **+118.4** | **100.0%** |
 | **6** | **59.0%** | **+63.1** | **99.5%** |
+| **8** | **59.0%** | **+63.1** | **99.6%** |
 
-Clears the 95% gate at two of three depths and never loses. Depth 4 — much
-shallower than anything we play — is the outlier; note the old rule by contrast
-*cost* 49 Elo, so "neutral at one depth" is a different category of result.
+Clears the 95% gate at three of four depths and never loses. Depth 8 — the
+deepest and closest to real play — is as strong as depth 6, which is what rules
+out the "gained at the gated depth only" reading. Depth 4, shallower than
+anything we play, is the lone outlier. **Adopted as the canonical brain**; the
+SPSA vector stays in git as the fallback.
+
+The first attempt at this depth-8 run died at 102/128 games having produced no
+result line while exiting cleanly. Worth a note for anyone polling a long job:
+watch for the *result*, not for process exit.
 
 Worth resolving an apparent contradiction: the new vector moves SQUARE_VALUE
 (ablation +103) and RESTRICTION (+66) **down**, yet plays stronger. There is no
