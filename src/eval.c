@@ -149,11 +149,25 @@ int LINE_HEAVY = 0;
 // more when it serves the plan the search is executing. Learned.
 int SQV_PLAN = 0;
 
+// Square-value context, per position: a piece is only really ON a square if it
+// can hold it. Contested and undefended, its square worth realises
+// (100 - SQV_LOOSE) percent; attacked by an enemy pawn — which evicts it for
+// free next move — a further (100 - SQV_KICK) percent. Replaces SQV_PLAN, whose
+// context came from the deleted plan machinery. Learned.
+int SQV_LOOSE = 40;
+int SQV_KICK  = 35;
+
 // Certainty pricing: learned piece values are allowed to stay inflated —
 // they are the piece's worth at FULL plan execution. Material realises
-// CERT_FLOOR percent of it when the plan is contested, scaling linearly
-// to 100 percent when deeper search finds no refutation (unstoppable).
+// CERT_FLOOR percent of it when the position is contested, scaling linearly
+// to 100 percent when nothing of ours is loose.
 int CERT_FLOOR = 55;
+
+// How fast loose material erodes certainty: the fraction of our material that
+// is attacked and undefended, times CERT_LOOSE, is subtracted from a full
+// 100 percent realisation. Replaces the root-global plan_certainty, which was
+// one scalar for every leaf of a search and so could not tell positions apart.
+int CERT_LOOSE = 300;
 
 // Scalar terms are plain ints (uppercase kept from their #define past) so
 // the Texel tuner can adjust them through the registry below.
@@ -192,6 +206,8 @@ const ParamBlock eval_params[] = {
     { "LOGI_PLAN", &LOGI_PLAN, 1 },
     { "LINE_KING", &LINE_KING, 1 }, { "LINE_HEAVY", &LINE_HEAVY, 1 },
     { "SQV_PLAN", &SQV_PLAN, 1 },
+    { "SQV_LOOSE", &SQV_LOOSE, 1 }, { "SQV_KICK", &SQV_KICK, 1 },
+    { "CERT_LOOSE", &CERT_LOOSE, 1 },
 };
 const int eval_params_n = sizeof(eval_params) / sizeof(eval_params[0]);
 

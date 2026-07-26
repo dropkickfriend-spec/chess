@@ -62,23 +62,40 @@ static int eval_material(const Board *bd, int *phase_out) {
 typedef struct {
     U64 att[64];        // attack set of the piece occupying each square
     U64 side_att[2];    // union of each side's attacks (pawns..king)
+    U64 pawn_att[2];    // pawns only: squares a piece can be evicted from
 } AttackInfo;
+
+// Can the piece standing on `sq` actually hold it? side_att is already built,
+// so both questions are a single AND. Note a piece's own attack set never
+// includes its own square, so side_att[side] & sq means "defended by some
+// OTHER friendly piece", which is exactly what is wanted.
+static inline int sq_contested(const AttackInfo *ai, int side, int sq) {
+    return (ai->side_att[!side] >> sq) & 1ULL;
+}
+static inline int sq_held(const AttackInfo *ai, int side, int sq) {
+    return (ai->side_att[side] >> sq) & 1ULL;
+}
+static inline int sq_kicked(const AttackInfo *ai, int side, int sq) {
+    return (ai->pawn_att[!side] >> sq) & 1ULL;
+}
 
 // att[sq] is written for every occupied square; empty squares are never read
 // by any consumer, so the array needs no zeroing.
 static void compute_attacks(const Board *bd, AttackInfo *ai) {
     U64 occ = bd->occ[BOTH];
     ai->side_att[WHITE] = ai->side_att[BLACK] = 0;
+    ai->pawn_att[WHITE] = ai->pawn_att[BLACK] = 0;
     for (int side = WHITE; side <= BLACK; side++) {
         int base = side == WHITE ? WP : BP;
-        U64 u = 0, bb, a;
-        bb = bd->bb[base];     while (bb) { int s = LSB(bb); POP_BIT(bb, s); a = pawn_attacks[side][s]; ai->att[s] = a; u |= a; }
+        U64 u = 0, p = 0, bb, a;
+        bb = bd->bb[base];     while (bb) { int s = LSB(bb); POP_BIT(bb, s); a = pawn_attacks[side][s]; ai->att[s] = a; u |= a; p |= a; }
         bb = bd->bb[base + 1]; while (bb) { int s = LSB(bb); POP_BIT(bb, s); a = knight_attacks[s];      ai->att[s] = a; u |= a; }
         bb = bd->bb[base + 2]; while (bb) { int s = LSB(bb); POP_BIT(bb, s); a = get_bishop_attacks(s, occ); ai->att[s] = a; u |= a; }
         bb = bd->bb[base + 3]; while (bb) { int s = LSB(bb); POP_BIT(bb, s); a = get_rook_attacks(s, occ);   ai->att[s] = a; u |= a; }
         bb = bd->bb[base + 4]; while (bb) { int s = LSB(bb); POP_BIT(bb, s); a = get_queen_attacks(s, occ);  ai->att[s] = a; u |= a; }
         bb = bd->bb[base + 5]; if (bb)    { int s = LSB(bb);                 a = king_attacks[s];            ai->att[s] = a; u |= a; }
         ai->side_att[side] = u;
+        ai->pawn_att[side] = p;
     }
 }
 
@@ -143,7 +160,10 @@ static int eval_restriction(const Board *bd, int phase, const AttackInfo *ai) {
 // built from the combined eval, so this term automatically reshapes the game
 // plan, and gather_raw runs it through the same best-move certainty filter as
 // MATERIAL/GAME_PLAN.
-static int eval_square_value(const Board *bd, int phase) {
+int sqv_context_on = 1;   // CHESS_NOSQV=1 disables, to A/B this term alone
+
+static int eval_square_value(const Board *bd, int phase, const AttackInfo *ai) {
+    extern int SQV_LOOSE, SQV_KICK;
     int mg = 0, eg = 0;
     for (int side = WHITE; side <= BLACK; side++) {
         int sign = side == WHITE ? 1 : -1;
@@ -161,6 +181,29 @@ static int eval_square_value(const Board *bd, int phase) {
                 if (SQV_PLAN && plan && (plan & (1ULL << sq))) {
                     pmg = pmg * (10 + SQV_PLAN) / 10;
                     peg = peg * (10 + SQV_PLAN) / 10;
+                }
+                // Per-position context: a piece is only really ON a good square
+                // if it can hold it. A knight on e5 that ...d6 evicts next move
+                // was never on e5 in any lasting sense.
+                //
+                // Only the POSITIVE part is discounted. A square bonus is
+                // something you have to hold to bank; a square PENALTY (a
+                // knight on a1) is bad whether or not the square is contested,
+                // and scaling that toward zero would pay a piece for hanging.
+                if (sqv_context_on && pt != 5 && (pmg > 0 || peg > 0)) {
+                    int realise = 100;
+                    if (sq_contested(ai, side, sq) && !sq_held(ai, side, sq))
+                        realise -= SQV_LOOSE;
+                    // Pawn eviction costs the opponent nothing, so it is a real
+                    // discount for pieces. Excluded for pawns: pawn-attacks-pawn
+                    // is an even trade, not an eviction.
+                    if (pt >= 1 && sq_kicked(ai, side, sq))
+                        realise -= SQV_KICK;
+                    if (realise < 0) realise = 0;
+                    if (realise < 100) {
+                        if (pmg > 0) pmg = pmg * realise / 100;
+                        if (peg > 0) peg = peg * realise / 100;
+                    }
                 }
                 mg += sign * pmg;
                 eg += sign * peg;
@@ -665,7 +708,10 @@ const char *strategy_names[STRAT_COUNT] = {
 };
 
 extern int PLAN_PART, PLAN_IDLE, PLAN_ENGAGE, CERT_FLOOR, LOGI_PLAN;
+extern int CERT_LOOSE;
 extern int plan_certainty;
+
+int cert_loose_on = 1;   // CHESS_NOCERT=1 falls back to the root-global scalar
 
 // GAME_PLAN used to live here: the last completed iteration's PV was treated as
 // "the plan", and every piece was priced by its degree of involvement in it.
@@ -783,7 +829,7 @@ static void gather_raw(const Board *bd, int *phase_out, int raw[STRAT_COUNT]) {
     raw[STRAT_OPPOSITION]          = eval_opposition(bd, phase);
     raw[STRAT_PAWN_PROMOTION]      = eval_pawn_promotion(bd, phase);
     raw[STRAT_COORDINATION]        = eval_coordination(bd, phase, &ai);
-    raw[STRAT_SQUARE_VALUE]        = eval_square_value(bd, phase);
+    raw[STRAT_SQUARE_VALUE]        = eval_square_value(bd, phase, &ai);
     raw[STRAT_BLOCKADE]            = eval_blockade(bd, phase);
     raw[STRAT_RESTRICTION]         = eval_restriction(bd, phase, &ai);
 
@@ -795,13 +841,45 @@ static void gather_raw(const Board *bd, int *phase_out, int raw[STRAT_COUNT]) {
     if (danger > 400) danger = 400;
     raw[STRAT_MATERIAL] = raw[STRAT_MATERIAL] * 400 / (400 + danger);
 
-    // Certainty pricing: learned values stay inflated as full-execution
-    // worth; material and plan premiums realise CERT_FLOOR percent of it
-    // in contested positions, 100 percent when the deepening search finds
-    // no refutation of its plan (plan_certainty from search.c; a fixed
-    // floor factor in tune/tooling where no lookahead exists).
+    // Certainty pricing: learned values stay inflated as full-execution worth,
+    // and realise CERT_FLOOR percent of it when the position is contested,
+    // rising to 100 percent when nothing is hanging.
+    //
+    // "Contested" used to mean plan_certainty from search.c — PV overlap
+    // measured ONCE PER ITERATION AT THE ROOT. Being a single global scalar it
+    // was identical at every leaf, so it could not tell two positions apart; it
+    // was also reset per search and assigned only after an iteration finished,
+    // so the first iteration always ran at the floor and later ones used the
+    // previous iteration's number. In tooling, with no lookahead at all, it was
+    // pinned at the floor forever.
+    //
+    // It now comes from the position: the share of each side's material that is
+    // attacked and undefended. Loose material is precisely when a static
+    // evaluation is least trustworthy, and unlike PV wobble it is a property of
+    // the node being evaluated.
     int floor_ = CERT_FLOOR < 0 ? 0 : CERT_FLOOR > 100 ? 100 : CERT_FLOOR;
-    int realise = floor_ + (100 - floor_) * plan_certainty / 100;
+    int certainty;
+    if (cert_loose_on) {
+        int loose = 0, total = 0;
+        for (int side = WHITE; side <= BLACK; side++) {
+            int base = side == WHITE ? WP : BP;
+            for (int pt = 0; pt <= 4; pt++) {       // king cannot hang
+                int val = material_mg[pt];
+                U64 bb = bd->bb[base + pt];
+                while (bb) {
+                    int sq = LSB(bb); POP_BIT(bb, sq);
+                    total += val;
+                    if (sq_contested(&ai, side, sq) && !sq_held(&ai, side, sq))
+                        loose += val;
+                }
+            }
+        }
+        int frac = total > 0 ? CERT_LOOSE * loose / total : 0;
+        certainty = frac >= 100 ? 0 : 100 - frac;
+    } else {
+        certainty = plan_certainty;
+    }
+    int realise = floor_ + (100 - floor_) * certainty / 100;
     raw[STRAT_MATERIAL]     = raw[STRAT_MATERIAL]     * realise / 100;
     raw[STRAT_SQUARE_VALUE] = raw[STRAT_SQUARE_VALUE] * realise / 100;
 

@@ -108,6 +108,12 @@ PRESETS = {
     "sqv_plan":   [("SQV_PLAN", 0)],                      # square-value amplifier
     "logi_plan":  [("LOGI_PLAN", 0)],                     # plan-relative logistics
     "line_clear": [("LINE_KING", 0), ("LINE_HEAVY", 0)],  # line-clearance
+    # Per-move piece pricing. Zeroing the knobs is equivalent to CHESS_NOSQV /
+    # CHESS_NOCERT and gives a second, independent way to ablate them — useful
+    # because the env toggles skip the work while these keep the code path live,
+    # so a difference between the two would mean the cost is in the walk itself.
+    "sqv_ctx":    [("SQV_LOOSE", 0), ("SQV_KICK", 0)],    # hold-your-square discount
+    "cert_loose": [("CERT_LOOSE", 0)],                    # loose-material certainty
 }
 BLOCK_COUNTS = {"coord_w": 5, "pawn_eg": 64, "king_eg": 64,
                 "passed_eg+1": 6, "material_eg": 5,

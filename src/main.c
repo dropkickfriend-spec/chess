@@ -77,6 +77,11 @@ int main(int argc, char **argv) {
     // Endgame recognizers on by default; CHESS_NOEG=1 turns them off to A/B them.
     { extern int eval_endgame_on; if (getenv("CHESS_NOEG")) eval_endgame_on = 0; }
     { extern int kpk_bitbase_on; if (getenv("CHESS_KPK")) kpk_bitbase_on = 1; }
+    // Per-move piece pricing, each half separately ablatable so a neutral
+    // result is attributable: square values discounted when the piece cannot
+    // hold its square, and certainty derived from loose material.
+    { extern int sqv_context_on; if (getenv("CHESS_NOSQV")) sqv_context_on = 0; }
+    { extern int cert_loose_on;  if (getenv("CHESS_NOCERT")) cert_loose_on = 0; }
 
     if (argc >= 2 && strcmp(argv[1], "perft") == 0) {
         int depth = argc >= 3 ? atoi(argv[2]) : 5;
