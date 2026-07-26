@@ -32,8 +32,8 @@ def make_side(path):
     dst = os.path.join(d, "strategy_weights.txt")
     if path == "uniform":
         with open(dst, "w") as f:
-            for i in range(N_STRATS):
-                f.write(f"weight {i} 1.0\n")
+            for name in ab_match.STRAT_NAMES:
+                f.write(f"weight {name} 1.0\n")
     else:
         shutil.copy(path, dst)
     return d

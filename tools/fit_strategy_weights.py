@@ -30,6 +30,16 @@ STRATS = ["DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING",
           "BLOCKADE", "RESTRICTION"]
 N = len(STRATS)
 
+# Slot order from when weight files were keyed by integer index, kept so older
+# files still load. A name here that is no longer in STRATS is a retired
+# strategy and is dropped, rather than shifting every later weight by one.
+LEGACY_SLOTS = [
+    "DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING", "PIECE_ACTIVITY",
+    "ATTACK_POTENTIAL", "PAWN_STRUCTURE", "DEFENDER_LOGISTICS", "KING_ACTIVITY",
+    "PAWN_PROMOTION", "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN",
+    "SQUARE_VALUE", "BLOCKADE", "RESTRICTION", "TRANSIT",
+]
+
 
 def load_dataset(path):
     fens, results = [], []
@@ -81,10 +91,17 @@ def load_current(path):
         with open(path) as f:
             for line in f:
                 p = line.split()
-                if len(p) == 3 and p[0] == "weight":
-                    i = int(p[1])
-                    if 0 <= i < N:
-                        w[i] = float(p[2])
+                if len(p) != 3 or p[0] != "weight":
+                    continue
+                # Name-keyed since strategies can be retired from the middle of
+                # the enum; integer form still read through the old slot order.
+                key = p[1]
+                if key not in STRATS:
+                    if not key.isdigit() or int(key) >= len(LEGACY_SLOTS):
+                        continue
+                    key = LEGACY_SLOTS[int(key)]
+                if key in STRATS:
+                    w[STRATS.index(key)] = float(p[2])
     except FileNotFoundError:
         pass
     return w

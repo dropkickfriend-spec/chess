@@ -35,6 +35,15 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENGINE = os.path.join(ROOT, "chess")
 BASELINE_WEIGHTS = os.path.join(ROOT, "data", "learned_values.txt")  # --baseline overrides
 
+# Strategy order as the engine defines it (src/eval_strategy.h). Weight files are
+# keyed by name, so this is only needed to enumerate them.
+STRAT_NAMES = [
+    "DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING", "PIECE_ACTIVITY",
+    "ATTACK_POTENTIAL", "PAWN_STRUCTURE", "DEFENDER_LOGISTICS", "KING_ACTIVITY",
+    "PAWN_PROMOTION", "OPPOSITION", "MATERIAL", "COORDINATION",
+    "SQUARE_VALUE", "BLOCKADE", "RESTRICTION",
+]
+
 # Varied opening lines (UCI), a few plies each, so deterministic engines don't
 # just replay one game. Both sides get each opening as White and as Black.
 OPENINGS = [

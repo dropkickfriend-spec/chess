@@ -73,16 +73,32 @@ def live_strategies(values):
     return live
 
 
+# Slot order from when weight files were keyed by integer index, so older files
+# still load. A name here that is no longer in NAMES is a retired strategy and
+# is dropped rather than shifting every later weight by one.
+LEGACY_SLOTS = [
+    "DEVELOPMENT", "CENTER_CONTROL", "KING_SAFETY_OPENING", "PIECE_ACTIVITY",
+    "ATTACK_POTENTIAL", "PAWN_STRUCTURE", "DEFENDER_LOGISTICS", "KING_ACTIVITY",
+    "PAWN_PROMOTION", "OPPOSITION", "MATERIAL", "COORDINATION", "GAME_PLAN",
+    "SQUARE_VALUE", "BLOCKADE", "RESTRICTION", "TRANSIT",
+]
+
+
 def load_weights(path):
     w = [1.0] * N
     if path and os.path.exists(path):
         with open(path) as f:
             for line in f:
                 p = line.split()
-                if len(p) == 3 and p[0] == "weight":
-                    i = int(p[1])
-                    if 0 <= i < N:
-                        w[i] = float(p[2])
+                if len(p) != 3 or p[0] != "weight":
+                    continue
+                key = p[1]
+                if key not in NAMES:
+                    if not key.isdigit() or int(key) >= len(LEGACY_SLOTS):
+                        continue
+                    key = LEGACY_SLOTS[int(key)]
+                if key in NAMES:
+                    w[NAMES.index(key)] = float(p[2])
     return w
 
 
@@ -217,8 +233,12 @@ def main():
         theta = normalise([t * (1 + ak * g * 2.0 * d) for t, d in zip(theta, delta)],
                           live)
 
-        print(f"iter {k:3d}: +side {100*score:5.1f}%  step {ak*g*2:+.3f}  "
-              f"MAT={theta[10]:.2f} SQV={theta[13]:.2f} RES={theta[15]:.2f}",
+        # Look the probes up by name: hardcoded indices silently went stale when
+        # GAME_PLAN was removed from the middle of the enum (theta[15] became an
+        # IndexError, and 13 stopped meaning SQUARE_VALUE).
+        probe = " ".join(f"{n[:3]}={theta[NAMES.index(n)]:.2f}"
+                         for n in ("MATERIAL", "SQUARE_VALUE", "RESTRICTION"))
+        print(f"iter {k:3d}: +side {100*score:5.1f}%  step {ak*g*2:+.3f}  {probe}",
               flush=True)
 
         if args.validate_every and k % args.validate_every == 0:
