@@ -230,12 +230,16 @@
             <div id="lossloopVerdict" style="font-size:0.9em;margin:2px 0 6px;color:#b0b0b0">
                 no runs yet
             </div>
-            <canvas id="lossloopChart" width="1100" height="220" style="width:100%"></canvas>
+            <div class="table-wrap"><table id="lossloopTable">
+                <thead><tr><th>round</th><th>cycle (tuned on)</th>
+                    <th>held out</th><th>W</th><th>L</th><th>turning pts</th></tr></thead>
+                <tbody></tbody>
+            </table></div>
             <div style="color:#777;font-size:0.78em;margin:4px 0 0">
-                The loop replays the games it lost with perturbed weights. <b>Cyan</b>
-                is the cycle it tunes on; <b>orange</b> is a disjoint set of openings it
-                never sees. Cyan rising while orange stays flat means it memorised those
-                openings, not that it got stronger — only the orange line is evidence.
+                The loop replays the games it lost with perturbed weights. "Cycle" is
+                what it tuned on; "held out" is a disjoint set of openings it never
+                sees. Cycle rising while held-out stays flat means it memorised those
+                openings, not that it got stronger — only held-out is evidence.
             </div>
 
             <div style="color:#00d4ff;font-size:1.05em;margin:20px 0 2px">
@@ -599,85 +603,57 @@
         const sfElo = s => 1350 + 75 * (s == null ? 20 : +s);
 
         // Loss loop: the score it TUNED on against a held-out set it never saw.
-        // Plotting both is the whole point — the loop replays its own losses, so
-        // a rising cycle score is what overfitting looks like, and only the
-        // held-out line distinguishes "stronger" from "memorised ten openings".
+        // Both are shown because the divergence is the whole point — the loop
+        // replays its own losses, so a rising cycle score is what overfitting
+        // looks like, and only held-out separates "stronger" from "memorised
+        // ten openings". A table, not a chart: it is two numbers per round, and
+        // the dashboard already renders six canvases.
         async function renderLossLoop() {
-            const canvas = document.getElementById('lossloopChart');
+            const tbody = document.querySelector('#lossloopTable tbody');
             const verdict = document.getElementById('lossloopVerdict');
-            if (!canvas) return;
+            if (!tbody) return;
             const rows = await fetchJSON(
                 `${SUPABASE_URL}/rest/v1/lossloop_rounds` +
-                `?select=run_id,round,games,cycle_score,heldout_score,sf_skill` +
-                `&order=created_at.desc&limit=200`,
+                `?select=run_id,round,games,cycle_score,heldout_score,sf_skill,` +
+                `wins,losses,turning_points&order=created_at.desc&limit=200`,
                 { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
-            const ctx = canvas.getContext('2d');
-            const W = canvas.width, H = canvas.height, pad = 40;
-            ctx.clearRect(0, 0, W, H);
             if (!rows || !rows.length) { verdict.textContent = 'no runs yet'; return; }
 
             // Newest run only: rounds of different runs are not comparable.
             const runId = rows[0].run_id;
             const pts = rows.filter(r => r.run_id === runId)
                             .sort((a, b) => a.round - b.round);
-            if (pts.length < 1) { verdict.textContent = 'no runs yet'; return; }
-
             const pct = (v, n) => (v == null || !n) ? null : 100 * v / n;
-            const cyc = pts.map(p => pct(p.cycle_score, p.games));
-            const ho = pts.map(p => pct(p.heldout_score, p.games));
-            const x = i => pad + (pts.length === 1 ? (W - 2 * pad) / 2
-                                  : i * (W - 2 * pad) / (pts.length - 1));
-            const y = v => H - pad - (v / 100) * (H - 2 * pad);
 
-            ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-            ctx.setLineDash([4, 4]);
-            [0, 50, 100].forEach(v => {
-                ctx.beginPath(); ctx.moveTo(pad, y(v)); ctx.lineTo(W - pad, y(v)); ctx.stroke();
-                ctx.fillStyle = '#777'; ctx.font = '11px sans-serif';
-                ctx.fillText(v + '%', 6, y(v) + 4);
-            });
-            ctx.setLineDash([]);
-
-            [[cyc, '#00d4ff', 'cycle (tuned on)'], [ho, '#ffa07a', 'held out']]
-                .forEach(([series, colour], si) => {
-                    ctx.strokeStyle = colour; ctx.fillStyle = colour; ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    let started = false;
-                    series.forEach((v, i) => {
-                        if (v == null) return;
-                        started ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v));
-                        started = true;
-                    });
-                    ctx.stroke();
-                    series.forEach((v, i) => {
-                        if (v == null) return;
-                        ctx.beginPath(); ctx.arc(x(i), y(v), 3, 0, 7); ctx.fill();
-                    });
-                    ctx.font = '12px sans-serif';
-                    ctx.fillText(si ? 'held out' : 'cycle (tuned on)', pad + 4, 16 + si * 15);
-                });
-
-            pts.forEach((p, i) => {
-                ctx.fillStyle = '#777'; ctx.font = '11px sans-serif';
-                ctx.fillText('r' + p.round, x(i) - 6, H - pad + 15);
-            });
+            tbody.innerHTML = pts.map(p => {
+                const c = pct(p.cycle_score, p.games), h = pct(p.heldout_score, p.games);
+                return `<tr><td><b>${p.round}</b></td>` +
+                    `<td>${p.cycle_score}/${p.games} (${c == null ? '-' : c.toFixed(0) + '%'})</td>` +
+                    `<td>${p.heldout_score == null ? '-' :
+                        p.heldout_score + '/' + p.games + ' (' + h.toFixed(0) + '%)'}</td>` +
+                    `<td class="pos">${p.wins ?? '-'}</td>` +
+                    `<td class="neg">${p.losses ?? '-'}</td>` +
+                    `<td>${p.turning_points ?? '-'}</td></tr>`;
+            }).join('');
 
             // State the conclusion rather than leaving it to be eyeballed.
+            const ho = pts.map(p => pct(p.heldout_score, p.games));
+            const cy = pts.map(p => pct(p.cycle_score, p.games));
             const first = ho.find(v => v != null), last = [...ho].reverse().find(v => v != null);
-            const cFirst = cyc.find(v => v != null), cLast = [...cyc].reverse().find(v => v != null);
+            const cF = cy.find(v => v != null), cL = [...cy].reverse().find(v => v != null);
             if (pts.length < 2 || first == null || last == null) {
                 verdict.textContent =
-                    `run ${runId}, ${pts.length} round(s) at skill ${pts[0].sf_skill}` +
+                    `run ${runId} · skill ${pts[0].sf_skill} · ${pts.length} round(s)` +
                     ' — need at least two rounds to read a trend';
             } else {
-                const dHo = last - first, dCyc = cLast - cFirst;
-                const msg = (dCyc > 5 && dHo <= 0)
+                const dHo = last - first, dCy = cL - cF;
+                const msg = (dCy > 5 && dHo <= 0)
                     ? 'cycle up, held-out flat or down: OVERFITTING to those openings'
                     : (dHo > 5 ? 'held-out improved: real gain, worth gating with strat_ab'
                                : 'no clear movement either way');
                 verdict.textContent =
                     `run ${runId} · skill ${pts[0].sf_skill} · ${pts.length} rounds · ` +
-                    `cycle ${cFirst.toFixed(0)}%→${cLast.toFixed(0)}%, ` +
+                    `cycle ${cF.toFixed(0)}%→${cL.toFixed(0)}%, ` +
                     `held-out ${first.toFixed(0)}%→${last.toFixed(0)}% — ${msg}`;
             }
         }
