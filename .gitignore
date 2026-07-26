@@ -7,6 +7,7 @@ data/learned_values.txt.new
 route_book.txt
 scratch_dashboard.png
 data/games_log.pgn
+tmp_learn_game.pgn
 data/ladder.json
 data/bleed_history.csv
 data/texel_dataset.txt
