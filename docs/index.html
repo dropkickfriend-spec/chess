@@ -225,6 +225,20 @@
             <canvas id="levelChart" width="1100" height="220" style="width:100%"></canvas>
 
             <div style="color:#00d4ff;font-size:1.05em;margin:20px 0 2px">
+                <b>Loss loop</b> — tuned vs held-out
+            </div>
+            <div id="lossloopVerdict" style="font-size:0.9em;margin:2px 0 6px;color:#b0b0b0">
+                no runs yet
+            </div>
+            <canvas id="lossloopChart" width="1100" height="220" style="width:100%"></canvas>
+            <div style="color:#777;font-size:0.78em;margin:4px 0 0">
+                The loop replays the games it lost with perturbed weights. <b>Cyan</b>
+                is the cycle it tunes on; <b>orange</b> is a disjoint set of openings it
+                never sees. Cyan rising while orange stays flat means it memorised those
+                openings, not that it got stronger — only the orange line is evidence.
+            </div>
+
+            <div style="color:#00d4ff;font-size:1.05em;margin:20px 0 2px">
                 <b>Best wins</b> — highest-rated victories
             </div>
             <div style="color:#777;font-size:0.78em;margin:0 0 6px">
@@ -584,6 +598,90 @@
         // matters is that the scale is FIXED, so the trend over time is real.
         const sfElo = s => 1350 + 75 * (s == null ? 20 : +s);
 
+        // Loss loop: the score it TUNED on against a held-out set it never saw.
+        // Plotting both is the whole point — the loop replays its own losses, so
+        // a rising cycle score is what overfitting looks like, and only the
+        // held-out line distinguishes "stronger" from "memorised ten openings".
+        async function renderLossLoop() {
+            const canvas = document.getElementById('lossloopChart');
+            const verdict = document.getElementById('lossloopVerdict');
+            if (!canvas) return;
+            const rows = await fetchJSON(
+                `${SUPABASE_URL}/rest/v1/lossloop_rounds` +
+                `?select=run_id,round,games,cycle_score,heldout_score,sf_skill` +
+                `&order=created_at.desc&limit=200`,
+                { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } });
+            const ctx = canvas.getContext('2d');
+            const W = canvas.width, H = canvas.height, pad = 40;
+            ctx.clearRect(0, 0, W, H);
+            if (!rows || !rows.length) { verdict.textContent = 'no runs yet'; return; }
+
+            // Newest run only: rounds of different runs are not comparable.
+            const runId = rows[0].run_id;
+            const pts = rows.filter(r => r.run_id === runId)
+                            .sort((a, b) => a.round - b.round);
+            if (pts.length < 1) { verdict.textContent = 'no runs yet'; return; }
+
+            const pct = (v, n) => (v == null || !n) ? null : 100 * v / n;
+            const cyc = pts.map(p => pct(p.cycle_score, p.games));
+            const ho = pts.map(p => pct(p.heldout_score, p.games));
+            const x = i => pad + (pts.length === 1 ? (W - 2 * pad) / 2
+                                  : i * (W - 2 * pad) / (pts.length - 1));
+            const y = v => H - pad - (v / 100) * (H - 2 * pad);
+
+            ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+            ctx.setLineDash([4, 4]);
+            [0, 50, 100].forEach(v => {
+                ctx.beginPath(); ctx.moveTo(pad, y(v)); ctx.lineTo(W - pad, y(v)); ctx.stroke();
+                ctx.fillStyle = '#777'; ctx.font = '11px sans-serif';
+                ctx.fillText(v + '%', 6, y(v) + 4);
+            });
+            ctx.setLineDash([]);
+
+            [[cyc, '#00d4ff', 'cycle (tuned on)'], [ho, '#ffa07a', 'held out']]
+                .forEach(([series, colour], si) => {
+                    ctx.strokeStyle = colour; ctx.fillStyle = colour; ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    let started = false;
+                    series.forEach((v, i) => {
+                        if (v == null) return;
+                        started ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v));
+                        started = true;
+                    });
+                    ctx.stroke();
+                    series.forEach((v, i) => {
+                        if (v == null) return;
+                        ctx.beginPath(); ctx.arc(x(i), y(v), 3, 0, 7); ctx.fill();
+                    });
+                    ctx.font = '12px sans-serif';
+                    ctx.fillText(si ? 'held out' : 'cycle (tuned on)', pad + 4, 16 + si * 15);
+                });
+
+            pts.forEach((p, i) => {
+                ctx.fillStyle = '#777'; ctx.font = '11px sans-serif';
+                ctx.fillText('r' + p.round, x(i) - 6, H - pad + 15);
+            });
+
+            // State the conclusion rather than leaving it to be eyeballed.
+            const first = ho.find(v => v != null), last = [...ho].reverse().find(v => v != null);
+            const cFirst = cyc.find(v => v != null), cLast = [...cyc].reverse().find(v => v != null);
+            if (pts.length < 2 || first == null || last == null) {
+                verdict.textContent =
+                    `run ${runId}, ${pts.length} round(s) at skill ${pts[0].sf_skill}` +
+                    ' — need at least two rounds to read a trend';
+            } else {
+                const dHo = last - first, dCyc = cLast - cFirst;
+                const msg = (dCyc > 5 && dHo <= 0)
+                    ? 'cycle up, held-out flat or down: OVERFITTING to those openings'
+                    : (dHo > 5 ? 'held-out improved: real gain, worth gating with strat_ab'
+                               : 'no clear movement either way');
+                verdict.textContent =
+                    `run ${runId} · skill ${pts[0].sf_skill} · ${pts.length} rounds · ` +
+                    `cycle ${cFirst.toFixed(0)}%→${cLast.toFixed(0)}%, ` +
+                    `held-out ${first.toFixed(0)}%→${last.toFixed(0)}% — ${msg}`;
+            }
+        }
+
         // "Is it actually learning?" — one line: performance rating per block of
         // games, oldest to newest. Score alone can't answer this because the
         // opponent changes as the ladder climbs (beating skill 2 then losing to
@@ -778,6 +876,7 @@
             // data) killed every panel after it — which looked like "the games
             // stopped showing" even though the data was fine.
             for (const [name, fn] of [['level stats', renderLevelStats],
+                                      ['loss loop', renderLossLoop],
                                       ['best wins', renderBestWins]]) {
                 try { await fn(); }
                 catch (e) { console.error(`panel "${name}" failed:`, e); }

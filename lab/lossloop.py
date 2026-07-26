@@ -40,8 +40,10 @@ import json
 import os
 import random
 import shutil
+import subprocess
 import sys
 import tempfile
+import uuid
 
 import chess
 import chess.engine
@@ -53,6 +55,33 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import ab_match
 import spsa as S
 from blunder_mine import find_blunder
+# Reuse the match runner's upload path rather than writing a second one: it
+# already opens the match row up front and writes each game as it finishes, so
+# an interrupted run keeps its completed games.
+from match import (open_match, upload_game, close_match, supabase_insert,
+                   _supabase_creds)
+
+
+def log_round(run_id, rnd, args, n, cycle, heldout, wins, losses, tps):
+    """One row per round. Never let a logging failure kill a long run."""
+    try:
+        base_url, key = _supabase_creds()
+        if not base_url or not key:
+            return
+        try:
+            sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                                 capture_output=True, text=True).stdout.strip() or None
+        except OSError:
+            sha = None
+        supabase_insert(base_url.rstrip("/"), key, "lossloop_rounds", [{
+            "run_id": run_id, "round": rnd, "sf_skill": args.skill,
+            "movetime_ms": int(args.movetime * 1000), "games": n,
+            "cycle_score": cycle, "heldout_score": heldout,
+            "wins": wins, "losses": losses, "turning_points": tps,
+            "spsa_iters": args.spsa_iters, "engine_sha": sha,
+        }])
+    except Exception as e:
+        print(f"  (round log failed: {e})", file=sys.stderr)
 
 
 def stockfish_path():
@@ -96,12 +125,17 @@ def play_vs_sf(weights_dir, values, opening, we_white, skill, movetime,
     return score, moves, evals
 
 
-def run_cycle(theta, values, openings, skill, movetime, live):
-    """Play each opening as both colours. Returns (score, wins, losses, rows)."""
+def run_cycle(theta, values, openings, skill, movetime, live, handle=None,
+              tag=""):
+    """Play each opening as both colours. Returns (score, wins, losses, rows).
+
+    `handle` is an open match row; each finished game is written immediately, so
+    an interrupted run keeps everything it already played."""
     d = S.side_dir(theta)
     total = wins = losses = 0.0
     rows = []
     try:
+        n = 0
         for op in openings:
             for we_white in (True, False):
                 sc, moves, evals = play_vs_sf(d, values, op, we_white, skill,
@@ -109,6 +143,22 @@ def run_cycle(theta, values, openings, skill, movetime, live):
                 total += sc
                 wins += sc == 1.0
                 losses += sc == 0.0
+                n += 1
+                if handle:
+                    res = ("1/2-1/2" if sc == 0.5 else
+                           ("1-0" if (sc == 1.0) == we_white else "0-1"))
+                    # `outcome` is TEXT in chessbb_games ("win"/"draw"/"loss"),
+                    # not a number — passing the float 400s.
+                    upload_game(handle, skill, {
+                        "round": n, "our_color": "white" if we_white else "black",
+                        "result": res,
+                        "outcome": "draw" if sc == 0.5 else
+                                   ("win" if sc == 1.0 else "loss"),
+                        # match.py stores fullmove_number here, not plies —
+                        # keep the column meaning one thing.
+                        "moves": (len(moves) + 1) // 2, "pgn": tag,
+                        "uci": " ".join(moves), "evals": json.dumps(evals),
+                    })
                 if sc == 0.0:
                     # Shape find_blunder expects (see blunder_mine.py).
                     rows.append({
@@ -123,6 +173,17 @@ def run_cycle(theta, values, openings, skill, movetime, live):
     finally:
         shutil.rmtree(d, ignore_errors=True)
     return total, int(wins), int(losses), rows
+
+
+def write_summary(args, summary):
+    """Rewritten after every round, so an interrupted or offline run still
+    leaves a readable record on disk."""
+    path = os.path.join(ROOT, "data", "lossloop_summary.json")
+    try:
+        with open(path, "w") as f:
+            json.dump(summary, f, indent=1)
+    except OSError as e:
+        print(f"  (summary write failed: {e})", file=sys.stderr)
 
 
 def mine_turning_points(rows, min_drop):
@@ -153,6 +214,10 @@ def main():
     ap.add_argument("--values", default=ab_match.BASELINE_WEIGHTS)
     ap.add_argument("--out", default="data/strategy_weights_lossloop.txt")
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--no-upload", action="store_true",
+                    help="run offline. Uploading is the DEFAULT here (unlike "
+                         "match.py) because the whole failure mode this fixes "
+                         "is results existing only in terminal scrollback")
     args = ap.parse_args()
 
     rng = random.Random(args.seed)
@@ -176,13 +241,27 @@ def main():
     print("  held-out is the column that matters; cycle score alone is a "
           "training score\n")
 
+    run_id = uuid.uuid4().hex[:12]
+    summary = {"run_id": run_id, "skill": args.skill, "games": 2 * n_ops,
+               "movetime": args.movetime, "rounds": []}
+    if not args.no_upload:
+        print(f"run {run_id}: logging games and rounds to Supabase")
+
     best = None
     for rnd in range(1, args.max_rounds + 1):
-        total, wins, losses, rows = run_cycle(theta, args.values, cycle_ops,
-                                              args.skill, args.movetime, live)
+        handle = (None if args.no_upload
+                  else open_match(args.skill, None, args.movetime))
+        total, wins, losses, rows = run_cycle(
+            theta, args.values, cycle_ops, args.skill, args.movetime, live,
+            handle, f"lossloop {run_id} round {rnd} cycle")
+        # Held-out games are NOT uploaded as match games: they are a measuring
+        # instrument, not training data, and mixing them into the corpus would
+        # quietly contaminate every later blunder-mine and fit.
         ho, hw, hl, _ = run_cycle(theta, args.values, heldout_ops, args.skill,
                                   args.movetime, live)
         n = 2 * n_ops
+        if handle:
+            close_match(handle, wins, int(total - wins - losses + 0.5), losses)
         print(f"round {rnd}: cycle {total:.1f}/{n} ({100*total/n:.0f}%) "
               f"{wins}W {losses}L   |   held-out {ho:.1f}/{n} "
               f"({100*ho/n:.0f}%)", flush=True)
@@ -190,14 +269,24 @@ def main():
         if best is None or ho > best[0]:
             best = (ho, list(theta), rnd)
 
+        # Mine before logging so the round row carries the turning-point count,
+        # and log before any break/continue so no round goes unrecorded —
+        # including the round that hits the target, which is the interesting one.
+        fens = mine_turning_points(rows, args.min_drop) if rows else []
+        summary["rounds"].append({
+            "round": rnd, "cycle": total, "heldout": ho, "games": n,
+            "wins": wins, "losses": losses, "turning_points": len(fens),
+        })
+        if not args.no_upload:
+            log_round(run_id, rnd, args, n, total, ho, wins, losses, len(fens))
+        write_summary(args, summary)
+
         if wins >= args.target:
             print(f"  target reached ({wins} wins).")
             break
         if not rows:
             print("  no losses to learn from this round.")
             continue
-
-        fens = mine_turning_points(rows, args.min_drop)
         if not fens:
             print(f"  {len(rows)} losses but none with a swing >= "
                   f"{args.min_drop}cp — nothing to seed SPSA with.")
