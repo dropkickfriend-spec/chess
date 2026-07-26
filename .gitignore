@@ -13,3 +13,4 @@ data/bleed_history.csv
 data/texel_dataset.txt
 data/blunders.txt
 data/blunders_big.txt
+data/strategy_weights_lossloop.txt
